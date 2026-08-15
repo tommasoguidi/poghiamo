@@ -30,7 +30,7 @@ def test_login_wrong_password(client, db):
     make_user(db, username="alice", password="testpass123")
     resp = login(client, "alice", "wrongwrong")
     assert resp.status_code == 200
-    assert "Invalid username or password" in resp.text
+    assert "Nome utente o password non validi" in resp.text
 
 
 def test_signup_with_valid_invite(client, db):
@@ -51,7 +51,7 @@ def test_signup_with_valid_invite(client, db):
 def test_signup_invalid_invite(client, db):
     resp = signup(client, invite_code="not-a-real-token")
     assert resp.status_code == 200
-    assert "Invalid or already used invite code" in resp.text
+    assert "Codice di invito non valido o già usato" in resp.text
 
 
 def test_signup_used_invite(client, db):
@@ -59,42 +59,42 @@ def test_signup_used_invite(client, db):
     other = make_user(db, username="other")
     invite = make_invite(db, creator=admin, used_by=other.id)
     resp = signup(client, invite_code=invite.token)
-    assert "Invalid or already used invite code" in resp.text
+    assert "Codice di invito non valido o già usato" in resp.text
 
 
 def test_signup_expired_invite(client, db):
     admin = make_user(db, username="admin", is_admin=True)
     invite = make_invite(db, creator=admin, age_days=8)
     resp = signup(client, invite_code=invite.token)
-    assert "Invalid or already used invite code" in resp.text
+    assert "Codice di invito non valido o già usato" in resp.text
 
 
 def test_signup_revoked_invite(client, db):
     admin = make_user(db, username="admin", is_admin=True)
     invite = make_invite(db, creator=admin, revoked=True)
     resp = signup(client, invite_code=invite.token)
-    assert "Invalid or already used invite code" in resp.text
+    assert "Codice di invito non valido o già usato" in resp.text
 
 
 def test_signup_password_mismatch(client, db):
     admin = make_user(db, username="admin", is_admin=True)
     invite = make_invite(db, creator=admin)
     resp = signup(client, invite_code=invite.token, confirm="different1")
-    assert "Passwords do not match" in resp.text
+    assert "Le password non coincidono" in resp.text
 
 
 def test_signup_short_password(client, db):
     admin = make_user(db, username="admin", is_admin=True)
     invite = make_invite(db, creator=admin)
     resp = signup(client, invite_code=invite.token, password="short")
-    assert "at least 8 characters" in resp.text
+    assert "almeno 8 caratteri" in resp.text
 
 
 def test_signup_taken_username(client, db):
     admin = make_user(db, username="admin", is_admin=True)
     invite = make_invite(db, creator=admin)
     resp = signup(client, invite_code=invite.token, username="admin")
-    assert "Username already taken" in resp.text
+    assert "Nome utente già in uso" in resp.text
 
 
 def test_settings_requires_login(client):
@@ -196,7 +196,7 @@ def test_used_invite_stays_dead_after_consumer_deletes_account(client, db):
     with TestClient(app) as second_client:
         resp = signup(second_client, invite_code=invite.token, username="guest2")
         assert resp.status_code == 200
-        assert "Invalid or already used invite code" in resp.text
+        assert "Codice di invito non valido o già usato" in resp.text
 
 
 def test_used_tokens_survive_creator_deletion_for_audit(client, db):

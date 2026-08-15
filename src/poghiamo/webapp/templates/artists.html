@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto px-6 py-16 space-y-8">
+    <div>
+        <h1 class="text-2xl font-bold text-cream mb-2">Artisti</h1>
+        <p class="text-zinc-400 text-sm">Cerca un artista e seguilo: i suoi concerti in Italia finiranno nel tuo feed.</p>
+    </div>
+
+    <!-- Search + add -->
+    <div class="bg-card rounded-2xl p-6 border border-zinc-800 relative">
+        <input type="text" id="artist-search" placeholder="Cerca un artista…" autocomplete="off"
+               class="block w-full px-4 py-3 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all">
+        <div id="suggestions" class="hidden absolute left-6 right-6 mt-2 bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden z-40 shadow-2xl"></div>
+        <p id="search-hint" class="hidden text-xs text-zinc-500 mt-2">
+            Ricerca esterna non disponibile ora: puoi comunque aggiungere il nome così com'è.
+        </p>
+
+        <form id="add-form" action="/artists/add" method="POST" class="hidden">
+            <input type="hidden" name="name" id="add-name">
+            <input type="hidden" name="deezer_id" id="add-deezer-id">
+            <input type="hidden" name="image_url" id="add-image-url">
+        </form>
+    </div>
+
+    <!-- Followed list -->
+    {% if follows %}
+    <ul class="space-y-3">
+        {% for f in follows %}
+        <li class="flex items-center justify-between gap-4 bg-card border border-zinc-800 rounded-xl px-4 py-3">
+            <div class="flex items-center gap-3 min-w-0">
+                {% if f.artist.image_url %}
+                <img src="{{ f.artist.image_url }}" alt="" class="w-10 h-10 rounded-full object-cover bg-zinc-800">
+                {% else %}
+                <div class="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 font-bold">
+                    {{ f.artist.name[0]|upper }}
+                </div>
+                {% endif %}
+                <div class="min-w-0">
+                    <div class="text-cream font-medium truncate">{{ f.artist.name }}</div>
+                    <div class="text-xs text-zinc-500" data-artist-id="{{ f.artist.id }}"
+                         data-status="{{ f.artist.resolution_status }}">
+                        {% if f.artist.resolution_status == 'pending' %}identificazione in corso…
+                        {% elif f.artist.resolution_status == 'unmatched' %}da verificare
+                        {% elif f.artist.country %}{{ f.artist.country }}{% endif %}
+                    </div>
+                </div>
+            </div>
+            <form action="/artists/{{ f.artist.id }}/unfollow" method="POST">
+                <button type="submit" class="text-xs text-zinc-400 hover:text-red-400 transition-colors">Non seguire più</button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <div class="text-center py-12 text-zinc-500 text-sm">
+        Non segui ancora nessuno. Comincia dalla ricerca qui sopra.
+    </div>
+    {% endif %}
+</div>
+
+<script>
+(function () {
+    const input = document.getElementById("artist-search");
+    const box = document.getElementById("suggestions");
+    const hint = document.getElementById("search-hint");
+    const form = document.getElementById("add-form");
+    let timer = null;
+
+    function submitAdd(name, deezerId, imageUrl) {
+        document.getElementById("add-name").value = name;
+        document.getElementById("add-deezer-id").value = deezerId ?? "";
+        document.getElementById("add-image-url").value = imageUrl ?? "";
+        form.submit();
+    }
+
+    function render(results, query) {
+        box.innerHTML = "";
+        results.forEach(function (r) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "w-full flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800 text-left";
+            const img = document.createElement("img");
+            img.className = "w-8 h-8 rounded-full object-cover bg-zinc-800";
+            if (r.image_url) img.src = r.image_url;
+            const span = document.createElement("span");
+            span.className = "text-sm text-cream";
+            span.textContent = r.name;
+            btn.appendChild(img);
+            btn.appendChild(span);
+            btn.addEventListener("click", function () { submitAdd(r.name, r.deezer_id, r.image_url); });
+            box.appendChild(btn);
+        });
+        // Free-text fallback, always available
+        const free = document.createElement("button");
+        free.type = "button";
+        free.className = "w-full px-4 py-2.5 hover:bg-zinc-800 text-left text-sm text-zinc-400";
+        free.textContent = "Aggiungi «" + query + "» così com'è";
+        free.addEventListener("click", function () { submitAdd(query, null, null); });
+        box.appendChild(free);
+        box.classList.remove("hidden");
+    }
+
+    input.addEventListener("input", function () {
+        clearTimeout(timer);
+        const q = input.value.trim();
+        hint.classList.add("hidden");
+        if (q.length < 2) { box.classList.add("hidden"); return; }
+        timer = setTimeout(function () {
+            fetch("/api/artists/search?q=" + encodeURIComponent(q))
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.degraded) hint.classList.remove("hidden");
+                    render(data.results || [], q);
+                })
+                .catch(function () { hint.classList.remove("hidden"); render([], q); });
+        }, 300);
+    });
+
+    document.addEventListener("click", function (e) {
+        if (!box.contains(e.target) && e.target !== input) box.classList.add("hidden");
+    });
+
+    // Live status updates: while any artist is still "pending", poll the
+    // status endpoint (which also re-schedules stuck enrichments) and update
+    // rows in place; stops by itself once everything is settled.
+    function statusText(a) {
+        if (a.status === "pending") return "identificazione in corso…";
+        if (a.status === "unmatched") return "da verificare";
+        return a.country || "";
+    }
+    function pollStatuses() {
+        if (!document.querySelector('[data-artist-id][data-status="pending"]')) return;
+        fetch("/api/artists/status")
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                (data.artists || []).forEach(function (a) {
+                    const el = document.querySelector('[data-artist-id="' + a.id + '"]');
+                    if (el && el.dataset.status !== a.status) {
+                        el.dataset.status = a.status;
+                        el.textContent = statusText(a);
+                    }
+                });
+                setTimeout(pollStatuses, 4000);
+            })
+            .catch(function () { setTimeout(pollStatuses, 8000); });
+    }
+    setTimeout(pollStatuses, 2500);
+})();
+</script>
+{% endblock %}
