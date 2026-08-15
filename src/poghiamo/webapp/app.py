@@ -4,16 +4,19 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+import requests
+from fastapi import BackgroundTasks, Depends, FastAPI, Form, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from starlette.middleware.sessions import SessionMiddleware
 
 from poghiamo.config import SECRET_KEY, SESSION_HTTPS_ONLY, WEBAPP_URL
 from poghiamo.database.engine import get_db, init_db
-from poghiamo.database.models import InviteToken, User
+from poghiamo.database.models import Artist, Follow, InviteToken, User
+from poghiamo import geo
+from poghiamo.services import artist_search
 from poghiamo.webapp.auth import (
     RedirectToLogin,
     generate_invite_token,
@@ -95,7 +98,7 @@ def login(
         return templates.TemplateResponse(
             request=request,
             name="login.html",
-            context={"error": "Invalid username or password"},
+            context={"error": "Nome utente o password non validi"},
         )
     request.session["user_id"] = user.id
     return RedirectResponse("/", status_code=303)
@@ -134,26 +137,26 @@ def signup(
         .first()
     )
     if not token_obj:
-        ctx["error"] = "Invalid or already used invite code"
+        ctx["error"] = "Codice di invito non valido o già usato"
         return templates.TemplateResponse(request=request, name="signup.html", context=ctx)
     if password != confirm_password:
-        ctx["error"] = "Passwords do not match"
+        ctx["error"] = "Le password non coincidono"
         return templates.TemplateResponse(request=request, name="signup.html", context=ctx)
     if len(password) < 8:
-        ctx["error"] = "Password must be at least 8 characters"
+        ctx["error"] = "La password deve avere almeno 8 caratteri"
         return templates.TemplateResponse(request=request, name="signup.html", context=ctx)
     if len(password.encode("utf-8")) > 72:
         # bcrypt silently ignores bytes past 72: reject instead of pretending.
-        ctx["error"] = "Password is too long (max 72 bytes)"
+        ctx["error"] = "Password troppo lunga (massimo 72 byte)"
         return templates.TemplateResponse(request=request, name="signup.html", context=ctx)
     if len(username) < 3:
-        ctx["error"] = "Username must be at least 3 characters"
+        ctx["error"] = "Il nome utente deve avere almeno 3 caratteri"
         return templates.TemplateResponse(request=request, name="signup.html", context=ctx)
     if len(username) > 32:
-        ctx["error"] = "Username must be at most 32 characters"
+        ctx["error"] = "Il nome utente può avere al massimo 32 caratteri"
         return templates.TemplateResponse(request=request, name="signup.html", context=ctx)
     if db.query(User).filter(User.username == username).first():
-        ctx["error"] = "Username already taken"
+        ctx["error"] = "Nome utente già in uso"
         return templates.TemplateResponse(request=request, name="signup.html", context=ctx)
 
     # Create the user and consume the token in ONE transaction, with a guarded
@@ -169,7 +172,7 @@ def signup(
     )
     if consumed != 1:
         db.rollback()
-        ctx["error"] = "Invalid or already used invite code"
+        ctx["error"] = "Codice di invito non valido o già usato"
         return templates.TemplateResponse(request=request, name="signup.html", context=ctx)
     db.commit()
 
@@ -201,12 +204,157 @@ def privacy(request: Request, user: User = Depends(get_current_user)):
     )
 
 
+# --- ARTISTS ---
+
+
+@app.get("/artists", response_class=HTMLResponse)
+def artists_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    follows = (
+        db.query(Follow)
+        .options(joinedload(Follow.artist))
+        .join(Artist, Follow.artist_id == Artist.id)
+        .filter(Follow.user_id == user.id, Follow.state == "active")
+        .order_by(Artist.name_normalized)
+        .all()
+    )
+    return templates.TemplateResponse(
+        request=request, name="artists.html", context={"user": user, "follows": follows}
+    )
+
+
+@app.get("/api/artists/search")
+def api_artists_search(
+    q: str = "",
+    user: User = Depends(require_user),
+):
+    q = q.strip()
+    if len(q) < 2:
+        return JSONResponse({"results": []})
+    try:
+        suggestions = artist_search.search_deezer(q)
+    except requests.RequestException as e:
+        logger.warning(f"Deezer search failed for '{q}': {e}")
+        return JSONResponse({"results": [], "degraded": True})
+    return JSONResponse({"results": [s.model_dump() for s in suggestions]})
+
+
+@app.get("/api/artists/status")
+def api_artists_status(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """Statuses of the user's followed artists, polled by the artists page.
+    Also self-heals: stuck 'pending' artists get their enrichment re-scheduled."""
+    follows = (
+        db.query(Follow)
+        .options(joinedload(Follow.artist))
+        .filter(Follow.user_id == user.id, Follow.state == "active")
+        .all()
+    )
+    pending = [f.artist.id for f in follows if f.artist.resolution_status == "pending"]
+    if pending:
+        artist_search.maybe_retry_enrichment(pending, background_tasks)
+    return JSONResponse(
+        {
+            "artists": [
+                {
+                    "id": f.artist.id,
+                    "status": f.artist.resolution_status,
+                    "country": f.artist.country,
+                }
+                for f in follows
+            ]
+        }
+    )
+
+
+@app.post("/artists/add")
+def add_artist(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    name: str = Form(...),
+    deezer_id: int = Form(None),
+    image_url: str = Form(None),
+):
+    name = name.strip()
+    if not name:
+        return RedirectResponse("/artists", status_code=303)
+    normalized = artist_search.normalize_name(name)
+
+    # Find-or-create the shared canonical artist: by Deezer id first, then by
+    # normalized name (covers free-text adds and cross-user dedup).
+    artist = None
+    if deezer_id is not None:
+        artist = db.query(Artist).filter(Artist.deezer_id == deezer_id).first()
+    if artist is None:
+        artist = db.query(Artist).filter(Artist.name_normalized == normalized).first()
+    if artist is None:
+        artist = Artist(
+            name=name,
+            name_normalized=normalized,
+            deezer_id=deezer_id,
+            image_url=image_url or None,
+        )
+        db.add(artist)
+        db.flush()
+        # Instant add, async enrichment: MusicBrainz resolution happens after
+        # the response, at its own 1 req/s pace (retry-tracked).
+        artist_search.maybe_retry_enrichment([artist.id], background_tasks)
+    elif artist.deezer_id is None and deezer_id is not None:
+        artist.deezer_id = deezer_id
+        if not artist.image_url and image_url:
+            artist.image_url = image_url
+
+    follow = (
+        db.query(Follow)
+        .filter(Follow.user_id == user.id, Follow.artist_id == artist.id)
+        .first()
+    )
+    if follow is None:
+        db.add(Follow(user_id=user.id, artist_id=artist.id, source="manual"))
+    elif follow.state != "active":
+        # Explicit re-follow reactivates the same row.
+        follow.state = "active"
+        follow.removed_at = None
+    db.commit()
+    return RedirectResponse("/artists", status_code=303)
+
+
+@app.post("/artists/{artist_id}/unfollow")
+def unfollow_artist(
+    artist_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    follow = (
+        db.query(Follow)
+        .filter(Follow.user_id == user.id, Follow.artist_id == artist_id)
+        .first()
+    )
+    if follow and follow.state == "active":
+        # Persistent removal: future Spotify syncs must not resurrect this.
+        follow.state = "removed"
+        follow.removed_at = datetime.now(timezone.utc)
+        db.commit()
+    return RedirectResponse("/artists", status_code=303)
+
+
+# --- SETTINGS ---
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
     error: str = None,
+    saved: str = None,
 ):
     invite_tokens = []
     if user.is_admin:
@@ -220,8 +368,37 @@ def settings_page(
     return templates.TemplateResponse(
         request=request,
         name="settings.html",
-        context={"user": user, "invite_tokens": invite_tokens, "error": error},
+        context={
+            "user": user,
+            "invite_tokens": invite_tokens,
+            "error": error,
+            "saved": saved,
+            # Flat searchable list for the area picker: regions first, then provinces.
+            "areas": (
+                [{"type": "region", "value": r, "label": r, "region": r} for r in geo.regions()]
+                + [
+                    {"type": "province", "value": sigla, "label": f"{name} ({sigla})", "region": region}
+                    for region, provs in geo.provinces_by_region().items()
+                    for sigla, name in provs
+                ]
+            ),
+        },
     )
+
+
+@app.post("/settings/regions")
+def save_regions(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    regions: list[str] = Form(default=[]),
+    provinces: list[str] = Form(default=[]),
+):
+    # Keep only real names/sigle; empty selection means "all of Italy".
+    known_provinces = geo.region_of_province()
+    user.regions = [r for r in regions if r in geo.regions()]
+    user.provinces = [p for p in provinces if p in known_provinces]
+    db.commit()
+    return RedirectResponse("/settings?saved=1", status_code=303)
 
 
 # --- ADMIN: INVITE TOKENS ---
@@ -262,7 +439,7 @@ def delete_account(
     password: str = Form(...),
 ):
     if not verify_password(password, user.hashed_password):
-        return RedirectResponse("/settings?error=Wrong+password", status_code=303)
+        return RedirectResponse("/settings?error=Password+errata", status_code=303)
 
     # An invite-only app with zero admins can never mint invites again:
     # refuse to delete the last admin.
@@ -270,12 +447,15 @@ def delete_account(
         admin_count = db.query(User).filter(User.is_admin).count()
         if admin_count <= 1:
             return RedirectResponse(
-                "/settings?error=You+are+the+last+admin:+promote+someone+first",
+                "/settings?error=Sei+l'ultimo+admin:+promuovi+prima+qualcun+altro",
                 status_code=303,
             )
 
     # Capture before delete: the ORM instance expires at commit.
     username = user.username
+
+    # The user's follows go with the account.
+    db.query(Follow).filter(Follow.user_id == user.id).delete()
 
     # Unused tokens the user created: delete. Used ones: keep for the audit
     # trail, detached from the creator. The token the user consumed to join is

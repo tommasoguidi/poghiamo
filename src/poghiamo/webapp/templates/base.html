@@ -1,6 +1,6 @@
 <!-- webapp/templates/base.html -->
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="it" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -37,11 +37,12 @@
     {% set p = request.url.path %}
     <nav class="sticky top-0 z-50 bg-background/90 border-b border-zinc-800 px-6 py-3 flex items-center justify-between">
         <a href="/" class="text-xl font-bold tracking-tight text-cream">poghiamo</a>
-        <div class="flex items-center gap-6">
-            <a href="/" class="text-sm font-medium transition-colors {{ 'text-primary' if p == '/' else 'text-zinc-400 hover:text-cream' }}">Home</a>
-            <a href="/settings" class="text-sm font-medium transition-colors {{ 'text-primary' if p == '/settings' else 'text-zinc-400 hover:text-cream' }}">Settings</a>
+        <div class="flex items-center gap-5">
+            <a href="/" class="text-sm font-medium transition-colors {{ 'text-primary' if p == '/' else 'text-zinc-400 hover:text-cream' }}">Concerti</a>
+            <a href="/artists" class="text-sm font-medium transition-colors {{ 'text-primary' if p.startswith('/artists') else 'text-zinc-400 hover:text-cream' }}">Artisti</a>
+            <a href="/settings" class="text-sm font-medium transition-colors {{ 'text-primary' if p == '/settings' else 'text-zinc-400 hover:text-cream' }}">Impostazioni</a>
             <form action="/logout" method="POST" class="inline">
-                <button type="submit" class="text-sm font-medium text-zinc-400 hover:text-cream transition-colors">Logout</button>
+                <button type="submit" class="text-sm font-medium text-zinc-400 hover:text-cream transition-colors">Esci</button>
             </form>
         </div>
     </nav>

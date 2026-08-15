@@ -44,7 +44,19 @@ def init_db():
 def _run_migrations():
     """Hand-rolled idempotent migrations, lesgoski-style: inspect the schema and
     ALTER/CREATE what is missing. Add numbered blocks here as the schema evolves."""
-    # No migrations yet: the phase-1 schema is fully covered by create_all().
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+
+    # Migration 1 (phase 2): area preferences on users (regions + provinces).
+    if "users" in inspector.get_table_names():
+        columns = [c["name"] for c in inspector.get_columns("users")]
+        if "regions" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN regions VARCHAR"))
+        if "provinces" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN provinces VARCHAR"))
 
 
 def seed_admin():

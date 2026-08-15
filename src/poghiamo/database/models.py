@@ -1,5 +1,15 @@
 # database/models.py
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+import json
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -7,7 +17,7 @@ from poghiamo.database.engine import Base
 
 
 class User(Base):
-    """Registered user. Artists, follows and region preferences arrive in phase 2."""
+    """Registered user."""
 
     __tablename__ = "users"
 
@@ -18,10 +28,36 @@ class User(Base):
     created_at = Column(DateTime, default=func.now())
     # Timestamp of the last events-feed visit, for the "new since last visit" marker.
     last_seen_events_at = Column(DateTime, nullable=True)
+    # Areas of interest: whole regions (names) and/or single provinces (sigle),
+    # both JSON lists. An event matches if its region OR its province is
+    # selected; both empty = all of Italy (see geo.area_matches).
+    _regions = Column("regions", String, nullable=True)
+    _provinces = Column("provinces", String, nullable=True)
 
     tokens_created = relationship(
         "InviteToken", foreign_keys="InviteToken.created_by", back_populates="creator"
     )
+    follows = relationship("Follow", back_populates="user")
+
+    @property
+    def regions(self) -> list[str]:
+        if not self._regions:
+            return []
+        return json.loads(self._regions)
+
+    @regions.setter
+    def regions(self, value: list[str]):
+        self._regions = json.dumps(value) if value else None
+
+    @property
+    def provinces(self) -> list[str]:
+        if not self._provinces:
+            return []
+        return json.loads(self._provinces)
+
+    @provinces.setter
+    def provinces(self, value: list[str]):
+        self._provinces = json.dumps(value) if value else None
 
 
 class InviteToken(Base):
@@ -45,3 +81,54 @@ class InviteToken(Base):
 
     creator = relationship("User", foreign_keys=[created_by], back_populates="tokens_created")
     used_by_user = relationship("User", foreign_keys=[used_by])
+
+
+class Artist(Base):
+    """Canonical artist record, shared across users.
+
+    Identity spine is the MusicBrainz MBID once resolved; dedup falls back to
+    the normalized name. Per-source handles are filled lazily by the phase-3
+    adapters and by the phase-5 Spotify connector.
+    """
+
+    __tablename__ = "artists"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    name_normalized = Column(String, nullable=False, index=True)
+    mbid = Column(String, unique=True, nullable=True)
+    country = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
+    deezer_id = Column(Integer, nullable=True, index=True)
+    # Per-source handles (phase 3+), all optional:
+    rockol_id = Column(String, nullable=True)
+    ticketsms_slug = Column(String, nullable=True)
+    dice_slug = Column(String, nullable=True)
+    tm_attraction_id = Column(String, nullable=True)
+    spotify_id = Column(String, nullable=True)
+    # MusicBrainz enrichment: pending -> resolved | unmatched
+    resolution_status = Column(String, default="pending", nullable=False)
+    created_at = Column(DateTime, default=func.now())
+
+
+class Follow(Base):
+    """User → artist follow.
+
+    Rows are NEVER deleted: an explicit unfollow sets state='removed', which
+    future Spotify syncs must respect (a synced artist the user removed in-app
+    stays removed). Re-following flips the same row back to 'active'.
+    """
+
+    __tablename__ = "follows"
+    __table_args__ = (UniqueConstraint("user_id", "artist_id", name="uq_follow_user_artist"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    artist_id = Column(Integer, ForeignKey("artists.id"), nullable=False, index=True)
+    state = Column(String, default="active", nullable=False)  # active | removed
+    source = Column(String, default="manual", nullable=False)  # manual | spotify
+    created_at = Column(DateTime, default=func.now())
+    removed_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="follows")
+    artist = relationship("Artist")
