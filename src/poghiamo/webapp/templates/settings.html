@@ -2,23 +2,161 @@
 
 {% block content %}
 <div class="max-w-3xl mx-auto px-6 py-16 space-y-8">
-    <h1 class="text-2xl font-bold text-cream">Settings</h1>
+    <h1 class="text-2xl font-bold text-cream">Impostazioni</h1>
 
     {% if error %}
     <div class="px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">
         {{ error }}
     </div>
     {% endif %}
+    {% if saved %}
+    <div class="px-4 py-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-sm">
+        Impostazioni salvate.
+    </div>
+    {% endif %}
+
+    <!-- Areas of interest -->
+    <div class="bg-card rounded-2xl p-8 border border-zinc-800">
+        <h2 class="text-lg font-semibold text-cream mb-1">Zone di interesse</h2>
+        <p class="text-sm text-zinc-400 mb-6">
+            Cerca una regione (vale per tutte le sue province) o una singola provincia.
+            Nessuna selezione = tutta Italia.
+        </p>
+        <div>
+            <div id="area-chips" class="flex flex-wrap gap-2 mb-3 empty:mb-0"></div>
+            <div class="relative">
+                <input type="text" id="area-search" placeholder="Cerca regione o provincia…" autocomplete="off"
+                       class="block w-full px-4 py-3 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all">
+                <div id="area-suggestions" class="hidden absolute left-0 right-0 mt-2 bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden z-40 shadow-2xl"></div>
+            </div>
+            <div class="mt-2 h-4 text-right">
+                <span id="area-saved" class="hidden text-xs text-emerald-400">salvato ✓</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function () {
+        const AREAS = {{ areas | tojson }};
+        const selected = {
+            regions: new Set({{ user.regions | tojson }}),
+            provinces: new Set({{ user.provinces | tojson }}),
+        };
+        const byValue = {};
+        AREAS.forEach(function (a) { byValue[a.type + ":" + a.value] = a; });
+
+        const input = document.getElementById("area-search");
+        const box = document.getElementById("area-suggestions");
+        const chips = document.getElementById("area-chips");
+        const savedBadge = document.getElementById("area-saved");
+        let savedTimer = null;
+
+        // Every add/remove persists immediately; no save button.
+        function save() {
+            const params = new URLSearchParams();
+            selected.regions.forEach(function (v) { params.append("regions", v); });
+            selected.provinces.forEach(function (v) { params.append("provinces", v); });
+            fetch("/settings/regions", { method: "POST", body: params }).then(function (r) {
+                if (!r.ok) return;
+                savedBadge.classList.remove("hidden");
+                clearTimeout(savedTimer);
+                savedTimer = setTimeout(function () { savedBadge.classList.add("hidden"); }, 1500);
+            });
+        }
+
+        function isCovered(a) {
+            if (a.type === "region") return selected.regions.has(a.value);
+            return selected.provinces.has(a.value) || selected.regions.has(a.region);
+        }
+
+        function render() {
+            chips.innerHTML = "";
+            const items = [];
+            selected.regions.forEach(function (v) { items.push(byValue["region:" + v]); });
+            selected.provinces.forEach(function (v) { items.push(byValue["province:" + v]); });
+            items.filter(Boolean).forEach(function (a) {
+                const chip = document.createElement("span");
+                chip.className = "inline-flex items-center gap-1.5 text-sm rounded-full px-3 py-1 border " +
+                    (a.type === "region"
+                        ? "bg-primary/10 border-primary/40 text-rose-300"
+                        : "bg-zinc-800 border-zinc-700 text-zinc-300");
+                const label = document.createElement("span");
+                label.textContent = a.label;
+                const x = document.createElement("button");
+                x.type = "button";
+                x.className = "text-zinc-500 hover:text-red-400 font-bold leading-none";
+                x.textContent = "×";
+                x.addEventListener("click", function () {
+                    selected[a.type === "region" ? "regions" : "provinces"].delete(a.value);
+                    render();
+                    save();
+                });
+                chip.appendChild(label);
+                chip.appendChild(x);
+                chips.appendChild(chip);
+            });
+        }
+
+        function pick(a) {
+            if (a.type === "region") {
+                selected.regions.add(a.value);
+                // A whole region absorbs its already-selected provinces.
+                AREAS.forEach(function (p) {
+                    if (p.type === "province" && p.region === a.value) selected.provinces.delete(p.value);
+                });
+            } else {
+                selected.provinces.add(a.value);
+            }
+            input.value = "";
+            box.classList.add("hidden");
+            input.focus();
+            render();
+            save();
+        }
+
+        input.addEventListener("input", function () {
+            const q = input.value.trim().toLowerCase();
+            if (q.length < 2) { box.classList.add("hidden"); return; }
+            const matches = AREAS.filter(function (a) {
+                return !isCovered(a) &&
+                    (a.label.toLowerCase().includes(q) || a.value.toLowerCase() === q);
+            }).slice(0, 10);
+            box.innerHTML = "";
+            if (!matches.length) { box.classList.add("hidden"); return; }
+            matches.forEach(function (a) {
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "w-full flex items-center justify-between px-4 py-2.5 hover:bg-zinc-800 text-left text-sm text-cream";
+                const name = document.createElement("span");
+                name.textContent = a.label;
+                const kind = document.createElement("span");
+                kind.className = "text-xs text-zinc-500";
+                kind.textContent = a.type === "region" ? "regione" : "provincia";
+                btn.appendChild(name);
+                btn.appendChild(kind);
+                btn.addEventListener("click", function () { pick(a); });
+                box.appendChild(btn);
+            });
+            box.classList.remove("hidden");
+        });
+
+        document.addEventListener("click", function (e) {
+            if (!box.contains(e.target) && e.target !== input) box.classList.add("hidden");
+        });
+
+        render();
+    })();
+    </script>
 
     {% if user.is_admin %}
     <div class="bg-card rounded-2xl p-8 border border-zinc-800">
-        <h2 class="text-lg font-semibold text-cream mb-1">Invite tokens</h2>
-        <p class="text-sm text-zinc-400 mb-6">Single-use, valid for 7 days. Share the link with a friend.</p>
+        <h2 class="text-lg font-semibold text-cream mb-1">Token di invito</h2>
+        <p class="text-sm text-zinc-400 mb-6">Monouso, validi 7 giorni. Condividi il link con chi vuoi invitare.</p>
 
         <form action="/admin/tokens/generate" method="POST" class="mb-6">
             <button type="submit"
                     class="bg-primary hover:bg-rose-600 text-white text-sm font-semibold px-5 py-2.5 rounded-xl active:scale-95 transition-all">
-                Generate new token
+                Genera nuovo token
             </button>
         </form>
 
@@ -29,38 +167,38 @@
                 <div class="min-w-0">
                     <code class="text-cream">{{ t.token }}</code>
                     {% if t.used_by %}
-                    <span class="ml-2 text-xs text-emerald-400">used</span>
+                    <span class="ml-2 text-xs text-emerald-400">usato</span>
                     {% else %}
                     <div class="text-xs text-zinc-500 truncate mt-1">{{ webapp_url }}/signup?invite={{ t.token }}</div>
                     {% endif %}
                 </div>
                 {% if not t.used_by %}
                 <form action="/admin/tokens/{{ t.id }}/revoke" method="POST">
-                    <button type="submit" class="text-xs text-zinc-400 hover:text-red-400 transition-colors">Revoke</button>
+                    <button type="submit" class="text-xs text-zinc-400 hover:text-red-400 transition-colors">Revoca</button>
                 </form>
                 {% endif %}
             </li>
             {% endfor %}
         </ul>
         {% else %}
-        <p class="text-sm text-zinc-500">No active tokens.</p>
+        <p class="text-sm text-zinc-500">Nessun token attivo.</p>
         {% endif %}
     </div>
     {% endif %}
 
     <div class="bg-card rounded-2xl p-8 border border-red-900/40">
-        <h2 class="text-lg font-semibold text-red-400 mb-1">Delete account</h2>
+        <h2 class="text-lg font-semibold text-red-400 mb-1">Elimina account</h2>
         <p class="text-sm text-zinc-400 mb-6">
-            Deletes your account and everything attached to it, immediately and permanently.
+            Elimina il tuo account e tutto ciò che gli appartiene, subito e per sempre.
         </p>
         <form action="/account/delete" method="POST" class="flex flex-col sm:flex-row gap-3"
-              onsubmit="return confirm('Delete your account permanently?');">
-            <input type="password" name="password" placeholder="Confirm with your password" required
+              onsubmit="return confirm('Eliminare definitivamente il tuo account?');">
+            <input type="password" name="password" placeholder="Conferma con la tua password" required
                    autocomplete="current-password"
                    class="flex-1 px-4 py-2.5 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none transition-all text-sm">
             <button type="submit"
                     class="bg-red-600/80 hover:bg-red-600 text-white text-sm font-semibold px-5 py-2.5 rounded-xl active:scale-95 transition-all">
-                Delete
+                Elimina
             </button>
         </form>
     </div>
