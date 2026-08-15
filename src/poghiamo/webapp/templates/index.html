@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto px-6 py-16">
+    <h1 class="text-2xl font-bold text-cream mb-2">Ciao, {{ user.username }}</h1>
+    <p class="text-zinc-400 mb-10">Your concert feed will live here.</p>
+
+    <div class="bg-card rounded-2xl p-8 border border-zinc-800">
+        <h2 class="text-lg font-semibold text-cream mb-4">What's coming</h2>
+        <ul class="space-y-3 text-sm text-zinc-400">
+            <li class="flex items-start gap-3">
+                <span class="text-primary font-bold">2</span>
+                <span>Follow your artists (autocomplete search, canonical identities).</span>
+            </li>
+            <li class="flex items-start gap-3">
+                <span class="text-primary font-bold">3</span>
+                <span>Nightly sweep of Italian concert sources per followed artist.</span>
+            </li>
+            <li class="flex items-start gap-3">
+                <span class="text-primary font-bold">4</span>
+                <span>The feed: upcoming dates filtered by your regions, with ticket links.</span>
+            </li>
+            <li class="flex items-start gap-3">
+                <span class="text-primary font-bold">5</span>
+                <span>Optional Spotify sync of followed and top artists.</span>
+            </li>
+        </ul>
+    </div>
+</div>
+{% endblock %}

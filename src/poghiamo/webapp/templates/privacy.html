@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto px-6 py-16">
+    <h1 class="text-2xl font-bold text-cream mb-8">Privacy</h1>
+
+    <div class="space-y-6 text-sm text-zinc-300 leading-relaxed">
+        <p>
+            poghiamo is a personal, invite-only service that tracks concerts of artists
+            you choose to follow. This page describes, plainly, what it stores and why.
+        </p>
+
+        <div>
+            <h2 class="text-base font-semibold text-cream mb-2">What we store</h2>
+            <p>
+                Your username, a hash of your password (never the password itself), and your
+                preferences: the artists you follow and the Italian regions you care about.
+                Nothing else. No email address, no name, no analytics, no tracking of any kind.
+            </p>
+        </div>
+
+        <div>
+            <h2 class="text-base font-semibold text-cream mb-2">Cookies</h2>
+            <p>
+                One strictly necessary session cookie keeps you logged in. It is not used for
+                tracking and contains only an identifier of your session. No consent banner is
+                required for this kind of cookie, and there are no other cookies.
+            </p>
+        </div>
+
+        <div>
+            <h2 class="text-base font-semibold text-cream mb-2">Where</h2>
+            <p>
+                Everything is stored on a single server hosted by Hetzner in Germany (EU).
+                Data never leaves it, is never shared, and is never sold.
+            </p>
+        </div>
+
+        <div>
+            <h2 class="text-base font-semibold text-cream mb-2">Spotify</h2>
+            <p>
+                If you ever connect Spotify (an optional feature), the list of artists you
+                follow there is imported and stored. Disconnecting removes that imported
+                data immediately.
+            </p>
+        </div>
+
+        <div>
+            <h2 class="text-base font-semibold text-cream mb-2">Deletion</h2>
+            <p>
+                You can delete your account at any time from the settings page. Deletion is
+                immediate and permanent, including everything attached to the account.
+                Backups of the database rotate away within two weeks.
+            </p>
+        </div>
+
+        <div>
+            <h2 class="text-base font-semibold text-cream mb-2">Contact</h2>
+            <p>
+                Questions or requests: ask the person who invited you, it is that kind of service.
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

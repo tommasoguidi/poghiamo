@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "devDependencies": {
+    "tailwindcss": "^3.4.0",
+    "@tailwindcss/forms": "^0.5.11"
+  },
+  "scripts": {
+    "build:css": "tailwindcss -i src/poghiamo/webapp/static/input.css -o src/poghiamo/webapp/static/tailwind.css --minify",
+    "watch:css": "tailwindcss -i src/poghiamo/webapp/static/input.css -o src/poghiamo/webapp/static/tailwind.css --watch"
+  }
+}

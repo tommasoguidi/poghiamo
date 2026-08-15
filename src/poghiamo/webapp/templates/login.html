@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-[80vh] flex items-center justify-center p-6">
+    <div class="w-full max-w-sm">
+
+        <div class="flex flex-col items-center mb-10">
+            <h1 class="text-3xl font-bold tracking-tight text-cream mb-2">poghiamo</h1>
+            <p class="text-sm text-zinc-400">Concerts of the artists you actually listen to</p>
+        </div>
+
+        <div class="bg-card rounded-2xl p-8 shadow-xl border border-zinc-800">
+            <h2 class="text-xl font-semibold text-cream mb-8 text-center">Login</h2>
+
+            {% if error %}
+            <div class="mb-6 px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">
+                {{ error }}
+            </div>
+            {% endif %}
+
+            <form action="/login" method="POST" class="space-y-5">
+                <div class="space-y-1.5">
+                    <label class="block text-xs font-medium text-zinc-400 ml-1" for="username">Username</label>
+                    <input type="text" name="username" id="username"
+                           class="block w-full px-4 py-3 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                           placeholder="your_username" required autofocus autocomplete="username">
+                </div>
+                <div class="space-y-1.5">
+                    <label class="block text-xs font-medium text-zinc-400 ml-1" for="login_password">Password</label>
+                    <input type="password" name="password" id="login_password"
+                           class="block w-full px-4 py-3 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                           placeholder="••••••••" required autocomplete="current-password">
+                </div>
+                <button type="submit"
+                        class="w-full bg-primary hover:bg-rose-600 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-rose-500/20 active:scale-95 transition-all mt-2">
+                    Login
+                </button>
+            </form>
+
+            <div class="mt-8 text-center space-y-4">
+                <p class="text-sm text-zinc-400">
+                    Got an invite?
+                    <a href="/signup" class="text-primary font-medium hover:underline underline-offset-4">Sign up</a>
+                </p>
+                <div class="pt-4 border-t border-zinc-800">
+                    <p class="text-[11px] text-zinc-500 uppercase tracking-widest leading-relaxed px-2">
+                        This site uses a session cookie to keep you logged in. No tracking.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

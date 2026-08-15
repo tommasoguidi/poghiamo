@@ -1,0 +1,57 @@
+<!-- webapp/templates/base.html -->
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>poghiamo</title>
+    {% if tailwind_dev %}
+    <!-- DEV: Tailwind CDN (run `npm run watch:css` instead to use the link below) -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#f43f5e",
+                        background: "#0e0e11",
+                        card: "#17171c",
+                        cream: "#f2f0e9"
+                    },
+                    fontFamily: {
+                        sans: ["system-ui", "-apple-system", "sans-serif"],
+                    },
+                },
+            },
+        };
+    </script>
+    {% else %}
+    <!-- PRODUCTION: pre-built CSS from Docker (see Dockerfile stage 0). No external assets. -->
+    <link rel="stylesheet" href="/static/tailwind.css">
+    {% endif %}
+</head>
+<body class="bg-background text-cream min-h-screen font-sans">
+
+{% if user %}
+    {% set p = request.url.path %}
+    <nav class="sticky top-0 z-50 bg-background/90 border-b border-zinc-800 px-6 py-3 flex items-center justify-between">
+        <a href="/" class="text-xl font-bold tracking-tight text-cream">poghiamo</a>
+        <div class="flex items-center gap-6">
+            <a href="/" class="text-sm font-medium transition-colors {{ 'text-primary' if p == '/' else 'text-zinc-400 hover:text-cream' }}">Home</a>
+            <a href="/settings" class="text-sm font-medium transition-colors {{ 'text-primary' if p == '/settings' else 'text-zinc-400 hover:text-cream' }}">Settings</a>
+            <form action="/logout" method="POST" class="inline">
+                <button type="submit" class="text-sm font-medium text-zinc-400 hover:text-cream transition-colors">Logout</button>
+            </form>
+        </div>
+    </nav>
+{% endif %}
+
+{% block content %}{% endblock %}
+
+<footer class="mt-16 pb-8 text-center">
+    <a href="/privacy" class="text-xs text-zinc-500 hover:text-zinc-300 underline underline-offset-4">Privacy</a>
+</footer>
+
+</body>
+</html>

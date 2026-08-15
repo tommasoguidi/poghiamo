@@ -1,0 +1,90 @@
+services:
+  web:
+    build: .
+    image: poghiamo
+    init: true
+    command: ["poghiamo-web"]
+    env_file: .env
+    environment:
+      - UVICORN_HOST=0.0.0.0
+      - UVICORN_RELOAD=false
+      - DATABASE_URL=sqlite:////app/data/poghiamo.db
+      - TZ=Europe/Rome
+    ports:
+      # Loopback-only debug access; 8000 is taken by lesgoski's web on this host.
+      - "127.0.0.1:8001:8000"
+    volumes:
+      - db-data:/app/data
+    networks:
+      - default
+      - edge
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=edge
+      - traefik.http.routers.poghiamo.rule=Host(`poghiamo.quest`)
+      # Explicit priorities: they beat the edge placeholder's implicit
+      # rule-length priority at cutover (identical rules would otherwise tie,
+      # and Traefik's winner would be undefined), and keep the auth router
+      # above the base one.
+      - traefik.http.routers.poghiamo.priority=100
+      - traefik.http.routers.poghiamo.entrypoints=websecure
+      - traefik.http.routers.poghiamo.tls.certresolver=letsencrypt
+      - traefik.http.routers.poghiamo.middlewares=poghiamo-headers,poghiamo-body
+      - traefik.http.routers.poghiamo.service=poghiamo
+      # /login and /signup carry a rate limit on top; the longer rule wins on
+      # those paths. tls=true without resolver: serves the certificate the
+      # router above already obtained (SNI-matched from the store).
+      - traefik.http.routers.poghiamo-auth.rule=Host(`poghiamo.quest`) && (Path(`/login`) || Path(`/signup`))
+      - traefik.http.routers.poghiamo-auth.priority=200
+      - traefik.http.routers.poghiamo-auth.entrypoints=websecure
+      - traefik.http.routers.poghiamo-auth.tls=true
+      - traefik.http.routers.poghiamo-auth.middlewares=poghiamo-headers,poghiamo-body,poghiamo-auth-rl
+      - traefik.http.routers.poghiamo-auth.service=poghiamo
+      - traefik.http.services.poghiamo.loadbalancer.server.port=8000
+      - traefik.http.middlewares.poghiamo-headers.headers.customFrameOptionsValue=SAMEORIGIN
+      - traefik.http.middlewares.poghiamo-headers.headers.contentTypeNosniff=true
+      # Cap request bodies at 1 MiB (nginx-default parity, same as lesgoski).
+      - traefik.http.middlewares.poghiamo-body.buffering.maxRequestBodyBytes=1048576
+      # 10 requests/minute per client IP, burst 5, on the auth endpoints.
+      - traefik.http.middlewares.poghiamo-auth-rl.rateLimit.average=10
+      - traefik.http.middlewares.poghiamo-auth-rl.rateLimit.period=1m
+      - traefik.http.middlewares.poghiamo-auth-rl.rateLimit.burst=5
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  scheduler:
+    # Same image as web (built once there); init:true makes SIGTERM reach the
+    # schedule loop instead of waiting out docker's 10 s grace then SIGKILL.
+    image: poghiamo
+    init: true
+    command: ["poghiamo-scheduler"]
+    env_file: .env
+    environment:
+      - DATABASE_URL=sqlite:////app/data/poghiamo.db
+      - BACKUP_DIR=/app/backups
+      - TZ=Europe/Rome
+    volumes:
+      - db-data:/app/data
+      # Named volume (not a bind mount): it inherits the image dir's appuser
+      # ownership, so the non-root container can write without host chown games.
+      - backup-data:/app/backups
+    depends_on:
+      - web
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  db-data:
+  backup-data:
+
+networks:
+  edge:
+    external: true

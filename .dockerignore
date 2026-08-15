@@ -1,19 +1,15 @@
-CLAUDE.md
+.git/
+.venv/
+.env
 .claude/
-
-# Python
+CLAUDE.md
+.pytest_cache/
 __pycache__/
 *.pyc
-.venv/
-.pytest_cache/
-
-# Secrets and local data
-.env
 *.db
 *.db-wal
 *.db-shm
 backups/
-
-# Frontend
 node_modules/
+tests/
 src/poghiamo/webapp/static/tailwind.css
