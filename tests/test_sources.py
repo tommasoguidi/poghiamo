@@ -139,28 +139,33 @@ def test_dice_no_slug_match_returns_empty(monkeypatch):
     assert DiceAdapter().fetch(ARTIST) == []
 
 
-# --- rockol (parser only; UNVALIDATED against live HTML, see adapter note) ---
+# --- rockol (parser validated against real HTML captured via ZenRows) ---
 
 
 def test_rockol_parser_extracts_and_dedupes():
-    title = "22 agosto 2026 - Faccianuvola presso Lungomare Trento - Roseto degli Abruzzi - Teramo"
-    item = f'<div data-cest="show-listing"><a title="{title}" href="/concerto-faccianuvola-roseto-c-98765">go</a>'
-    # Desktop + mobile duplicate markup of the SAME event (same permalink id)
-    html = f"<html>{item}{item}</html>"
-
+    # Real markup captured 2026-08-16: two events, each duplicated desktop/mobile.
+    html = (_FIXTURES / "rockol_search.html").read_text()
     events = parse_rockol_html(html)
-    assert len(events) == 1  # deduped by permalink id
-    e = events[0]
-    assert e.source == "rockol"
-    assert e.date == dt.date(2026, 8, 22)
-    assert e.city == "Roseto degli Abruzzi"
-    assert e.venue == "Lungomare Trento"
-    assert e.source_event_id == "98765"
-    assert e.ticket_url.startswith("https://www.rockol.it/")
+    assert len(events) == 2  # deduped from 4 anchors by permalink id
+
+    by_city = {e.city: e for e in events}
+    roseto = by_city["Roseto degli Abruzzi"]
+    assert roseto.date == dt.date(2026, 8, 22)
+    assert roseto.venue == "Lungomare Trento"
+    assert roseto.source_event_id == "9zdg4n8o4d0"
+    assert roseto.ticket_url.startswith("https://www.rockol.it/concerto-")
+
+    verona = by_city["Verona"]  # no province segment in the title
+    assert verona.date == dt.date(2026, 9, 2)
+    assert verona.venue == "Arena"
+
+    # City names resolve to province/region via the ISTAT table
+    assert resolve_area("Roseto degli Abruzzi", None) == ("TE", "Abruzzo")
+    assert resolve_area("Verona", None) == ("VR", "Veneto")
 
 
-def test_rockol_parser_skips_untitled_items():
-    html = '<div data-cest="show-listing"><a href="/x-c-1">no title</a>'
+def test_rockol_parser_ignores_non_event_anchors():
+    html = '<a href="/some/other/page" title="not an event 2026">x</a>'
     assert parse_rockol_html(html) == []
 
 

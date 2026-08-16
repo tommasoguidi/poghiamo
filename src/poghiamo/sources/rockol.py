@@ -31,16 +31,17 @@ _MONTHS = {
     "luglio": 7, "agosto": 8, "settembre": 9, "ottobre": 10, "novembre": 11, "dicembre": 12,
 }
 
-# Full date lives in the <a title="..."> attribute in a dash-separated structure:
-#   "22 agosto 2026 - Faccianuvola presso Lungomare Trento - Roseto degli Abruzzi - Teramo"
-#    = date            - artist presso venue                - city                - province
-# NOTE: parsing is UNVALIDATED against live HTML (rockol blocks the VPS). It
-# encodes the documented structure and its fixture; revisit the moment a
-# scraping-API fetcher is wired and real HTML can be captured.
+# Validated against real HTML captured via ZenRows 2026-08-16. Each event is an
+# anchor whose href is a /concerto-...-c-{id} permalink and whose title reads:
+#   "Dettagli evento 22 agosto 2026 - 'Faccianuvola' presso Lungomare Trento - Roseto degli Abruzzi - Teramo"
+#   = <prefix> <date> - '<artist>' presso <venue> - <city>[ - <province>]
+# Events appear twice (desktop/mobile); dedup by the alphanumeric permalink id.
 _TITLE_DATE = re.compile(r"(\d{1,2})\s+([a-zàèéìòù]+)\s+(\d{4})", re.IGNORECASE)
-_ITEM = re.compile(r'<[^>]*data-cest="show-listing".*?</a>', re.DOTALL)
-_TITLE_ATTR = re.compile(r'title="([^"]+)"')
-_HREF = re.compile(r'href="([^"]+)"')
+_A_TAG = re.compile(r"<a\s[^>]*>", re.IGNORECASE | re.DOTALL)
+_TITLE_ATTR = re.compile(r'title="([^"]*)"', re.IGNORECASE)
+_HREF = re.compile(r'href="([^"]*)"', re.IGNORECASE)
+_PERMALINK = re.compile(r"/concerto-[^\"']*-c-([a-z0-9]+)", re.IGNORECASE)
+_VENUE_CITY = re.compile(r"presso\s+(.+)$", re.IGNORECASE)
 
 
 def rockol_search_url(name_normalized: str) -> str:
@@ -48,46 +49,69 @@ def rockol_search_url(name_normalized: str) -> str:
 
 
 def parse_rockol_html(html: str) -> list[ScrapedEvent]:
-    """Parse a rockol search-results page into ScrapedEvents. Deduplicate the
-    desktop/mobile duplicate markup by the event permalink id in the URL."""
+    """Parse a rockol search-results page into ScrapedEvents. Iterate the event
+    anchors (concerto permalinks), dedup the desktop/mobile duplicates by the
+    permalink id."""
     events: list[ScrapedEvent] = []
     seen: set[str] = set()
-    for block in _ITEM.findall(html):
-        tm = _TITLE_ATTR.search(block)
-        title = tm.group(1) if tm else ""
-        dm = _TITLE_DATE.search(title)
-        if not dm:
+    for tag in _A_TAG.findall(html):
+        href_m = _HREF.search(tag)
+        if not href_m:
             continue
-        month = _MONTHS.get(dm.group(2).lower())
-        if not month:
-            continue
-        try:
-            date = dt.date(int(dm.group(3)), month, int(dm.group(1)))
-        except ValueError:
+        perm_m = _PERMALINK.search(href_m.group(1))
+        if not perm_m:
+            continue  # not an event anchor
+        pid = perm_m.group(1)
+        if pid in seen:
             continue
 
-        href_m = _HREF.search(block)
-        href = href_m.group(1) if href_m else None
-        pid = _permalink_id(href)
-        if pid and pid in seen:
+        title_m = _TITLE_ATTR.search(tag)
+        title = title_m.group(1) if title_m else ""
+        date = _parse_date(title)
+        if date is None:
             continue
-        if pid:
-            seen.add(pid)
+        seen.add(pid)
 
-        city = _city(title)
+        venue, city = _venue_city(title)
         events.append(
             ScrapedEvent(
                 source="rockol",
                 source_event_id=pid,
                 date=date,
                 city=city,
-                province=None,  # rockol gives the province NAME; region resolved from city downstream
-                venue=_venue(title),
-                ticket_url=_abs(href),
+                province=None,  # region resolved from city downstream
+                venue=venue,
+                ticket_url=_abs(href_m.group(1)),
                 title=title.strip(),
             )
         )
     return events
+
+
+def _parse_date(title: str) -> dt.date | None:
+    dm = _TITLE_DATE.search(title)
+    if not dm:
+        return None
+    month = _MONTHS.get(dm.group(2).lower())
+    if not month:
+        return None
+    try:
+        return dt.date(int(dm.group(3)), month, int(dm.group(1)))
+    except ValueError:
+        return None
+
+
+def _venue_city(title: str) -> tuple[str | None, str | None]:
+    # After "presso": "venue - city[ - province]". Venue is the first segment,
+    # city the second; the trailing province (when present) is ignored since the
+    # region is resolved from the city name via the ISTAT table.
+    m = _VENUE_CITY.search(title)
+    if not m:
+        return None, None
+    segs = [s.strip() for s in m.group(1).split(" - ") if s.strip()]
+    venue = segs[0] if segs else None
+    city = segs[1] if len(segs) >= 2 else None
+    return venue, city
 
 
 class RockolAdapter(SourceAdapter):
@@ -137,28 +161,6 @@ class RockolAdapter(SourceAdapter):
         r = requests.get(_ZENROWS, params=params, timeout=70)
         r.raise_for_status()
         return parse_rockol_html(r.text)
-
-
-def _permalink_id(href: str | None) -> str | None:
-    if not href:
-        return None
-    m = re.search(r"-c-(\d+)", href)  # event permalink /concerto-...-c-{id}
-    return m.group(1) if m else None
-
-
-def _city(title: str) -> str | None:
-    # Structure: "date - artist presso venue - city - province". The city is the
-    # second-to-last dash-separated segment; resolve_area later maps it to a
-    # province/region via the ISTAT table.
-    parts = [p.strip() for p in title.split(" - ") if p.strip()]
-    if len(parts) >= 3:
-        return parts[-2]
-    return None
-
-
-def _venue(title: str) -> str | None:
-    m = re.search(r"presso\s+(.+?)\s+-\s+", title)
-    return m.group(1).strip() if m else None
 
 
 def _abs(href: str | None) -> str | None:
