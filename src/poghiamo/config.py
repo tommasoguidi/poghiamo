@@ -35,12 +35,10 @@ SCAN_BATCH_SIZE: int = int(os.getenv("SCAN_BATCH_SIZE", 20))
 EVENT_STALE_DAYS: int = int(os.getenv("EVENT_STALE_DAYS", 7))
 # Ticketmaster Discovery API key; the adapter disables itself when empty.
 TICKETMASTER_API_KEY: str = os.getenv("TICKETMASTER_API_KEY", "")
-# ScraperAPI key for the rockol fetch (residential IP + JS render, to clear
-# rockol's Cloudflare). The rockol adapter disables itself when empty.
-SCRAPERAPI_KEY: str = os.getenv("SCRAPERAPI_KEY", "")
-# Proxy tier for rockol: "" (standard), "premium" (+25 credits w/ render) or
-# "ultra_premium" (+75 credits w/ render). Cloudflare usually needs ultra.
-ROCKOL_PROXY_TIER: str = os.getenv("ROCKOL_PROXY_TIER", "ultra_premium")
-# Hard monthly cap on rockol scraping requests, to stay inside the ScraperAPI
-# free tier (1000 credits/month; ultra+render = 75 credits each).
-ROCKOL_MONTHLY_BUDGET: int = int(os.getenv("ROCKOL_MONTHLY_BUDGET", 12))
+# ZenRows key for the rockol fetch (residential proxy + JS render, to clear
+# rockol's Cloudflare interactive challenge). The rockol adapter disables
+# itself when empty.
+ZENROWS_API_KEY: str = os.getenv("ZENROWS_API_KEY", "")
+# Hard monthly cap on rockol scraping requests, to stay inside the ZenRows free
+# tier (5000 credits/month; js_render+premium_proxy = 25 credits each → 200/mo).
+ROCKOL_MONTHLY_BUDGET: int = int(os.getenv("ROCKOL_MONTHLY_BUDGET", 180))

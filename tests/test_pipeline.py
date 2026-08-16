@@ -161,13 +161,14 @@ def test_adapter_can_opt_out_of_a_run(db, artist, monkeypatch):
 
 
 def test_rockol_budget_guard_counts_month(db, artist):
+    from poghiamo.config import ROCKOL_MONTHLY_BUDGET
     from poghiamo.sources.rockol import RockolAdapter
 
     adapter = RockolAdapter()
     # Under budget with no history
     assert adapter.should_run(db, artist) is True
-    # Fill the month's budget with spent runs
-    for _ in range(12):
+    # Fill the month's budget with spent runs (ok/error/timeout count)
+    for _ in range(ROCKOL_MONTHLY_BUDGET):
         db.add(ScanLog(artist_id=artist.id, source="rockol", status="ok", found=0))
     db.commit()
     assert adapter.should_run(db, artist) is False

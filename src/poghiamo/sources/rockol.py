@@ -17,17 +17,13 @@ import datetime as _dt
 
 import requests
 
-from poghiamo.config import (
-    ROCKOL_MONTHLY_BUDGET,
-    ROCKOL_PROXY_TIER,
-    SCRAPERAPI_KEY,
-)
+from poghiamo.config import ROCKOL_MONTHLY_BUDGET, ZENROWS_API_KEY
 from poghiamo.sources.base import ArtistRef, RateLimiter, ScrapedEvent, SourceAdapter
 
 logger = logging.getLogger(__name__)
 
 _SEARCH = "https://www.rockol.it/concerti-ricerca?artista={q}"
-_SCRAPERAPI = "https://api.scraperapi.com"
+_ZENROWS = "https://api.zenrows.com/v1/"
 _rl = RateLimiter(5.0)  # honor rockol's robots.txt Crawl-Delay: 5
 
 _MONTHS = {
@@ -99,8 +95,8 @@ class RockolAdapter(SourceAdapter):
 
     @property
     def enabled(self) -> bool:
-        # Off until ScraperAPI (residential IP + JS render) is configured.
-        return bool(SCRAPERAPI_KEY)
+        # Off until ZenRows (residential proxy + JS render) is configured.
+        return bool(ZENROWS_API_KEY)
 
     def should_run(self, db, artist) -> bool:
         """Skip once this calendar month's request budget is spent, to stay
@@ -129,16 +125,16 @@ class RockolAdapter(SourceAdapter):
         if not self.enabled:
             return []
         _rl.wait()
+        # ZenRows: js_render clears the JS challenge, premium_proxy gives a
+        # residential IP, proxy_country=it keeps it Italian.
         params = {
-            "api_key": SCRAPERAPI_KEY,
-            "render": "true",
-            "country_code": "it",
+            "apikey": ZENROWS_API_KEY,
+            "url": rockol_search_url(artist.name_normalized),
+            "js_render": "true",
+            "premium_proxy": "true",
+            "proxy_country": "it",
         }
-        if ROCKOL_PROXY_TIER in ("premium", "ultra_premium"):
-            params[ROCKOL_PROXY_TIER] = "true"
-        # ScraperAPI wants its own params before the target url.
-        params["url"] = rockol_search_url(artist.name_normalized)
-        r = requests.get(_SCRAPERAPI, params=params, timeout=70)
+        r = requests.get(_ZENROWS, params=params, timeout=70)
         r.raise_for_status()
         return parse_rockol_html(r.text)
 
