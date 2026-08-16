@@ -4,10 +4,13 @@ import json
 from sqlalchemy import (
     Boolean,
     Column,
+    Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
+    Time,
     UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
@@ -109,6 +112,8 @@ class Artist(Base):
     # MusicBrainz enrichment: pending -> resolved | unmatched
     resolution_status = Column(String, default="pending", nullable=False)
     created_at = Column(DateTime, default=func.now())
+    # Last time the events pipeline scanned this artist (drives the sweep cadence).
+    last_scanned_at = Column(DateTime, nullable=True)
 
 
 class Follow(Base):
@@ -132,3 +137,68 @@ class Follow(Base):
 
     user = relationship("User", back_populates="follows")
     artist = relationship("Artist")
+
+
+class Event(Base):
+    """Canonical concert, shared across users and sources.
+
+    Italy-only (adapters drop foreign dates at their boundary). Dedup key is
+    (artist_id, date, city_normalized); the same gig arriving from several
+    sources collapses onto one Event with one EventSource row per source.
+    Stale events (unseen recently) are kept until their date passes; they are
+    never silently removed.
+    """
+
+    __tablename__ = "events"
+    __table_args__ = (
+        UniqueConstraint("artist_id", "date", "city_normalized", name="uq_event_dedup"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    artist_id = Column(Integer, ForeignKey("artists.id"), nullable=False, index=True)
+    date = Column(Date, nullable=False, index=True)
+    time = Column(Time, nullable=True)
+    venue = Column(String, nullable=True)
+    city = Column(String, nullable=True)
+    city_normalized = Column(String, nullable=False, default="")
+    province = Column(String, nullable=True)  # sigla, e.g. "MI"
+    region = Column(String, nullable=True)
+    lat = Column(Float, nullable=True)
+    lon = Column(Float, nullable=True)
+    title = Column(String, nullable=True)
+    first_seen_at = Column(DateTime, default=func.now())
+    last_seen_at = Column(DateTime, default=func.now())
+
+    artist = relationship("Artist")
+    sources = relationship("EventSource", back_populates="event", cascade="all, delete-orphan")
+
+
+class EventSource(Base):
+    """One source's view of an Event (its own id and ticket link)."""
+
+    __tablename__ = "event_sources"
+    __table_args__ = (UniqueConstraint("event_id", "source", name="uq_event_source"),)
+
+    id = Column(Integer, primary_key=True)
+    event_id = Column(Integer, ForeignKey("events.id"), nullable=False, index=True)
+    source = Column(String, nullable=False)  # ticketsms | dice | ticketmaster | rockol
+    source_event_id = Column(String, nullable=True)
+    ticket_url = Column(String, nullable=True)
+    first_seen_at = Column(DateTime, default=func.now())
+    last_seen_at = Column(DateTime, default=func.now())
+
+    event = relationship("Event", back_populates="sources")
+
+
+class ScanLog(Base):
+    """Per-source health record for one artist scan, for observability."""
+
+    __tablename__ = "scan_logs"
+
+    id = Column(Integer, primary_key=True)
+    artist_id = Column(Integer, ForeignKey("artists.id"), nullable=True, index=True)
+    source = Column(String, nullable=False)
+    status = Column(String, nullable=False)  # ok | error | timeout | disabled | skipped
+    found = Column(Integer, default=0)
+    message = Column(String, nullable=True)
+    ran_at = Column(DateTime, default=func.now(), index=True)

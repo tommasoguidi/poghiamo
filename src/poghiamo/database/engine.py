@@ -58,6 +58,14 @@ def _run_migrations():
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE users ADD COLUMN provinces VARCHAR"))
 
+    # Migration 2 (phase 3): last_scanned_at on artists (events/event_sources/
+    # scan_logs tables are created by create_all).
+    if "artists" in inspector.get_table_names():
+        columns = [c["name"] for c in inspector.get_columns("artists")]
+        if "last_scanned_at" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE artists ADD COLUMN last_scanned_at DATETIME"))
+
 
 def seed_admin():
     """Bootstrap the admin account from ADMIN_USERNAME / ADMIN_PASSWORD.
