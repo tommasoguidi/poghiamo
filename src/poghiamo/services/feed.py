@@ -80,8 +80,11 @@ def feed_events(db, user, all_italy: bool = False):
 
 def feed_split(db, user):
     """Upcoming events for followed artists, split into (in the user's areas,
-    elsewhere). Assumes the user has at least one area set."""
+    elsewhere). With no area set, nothing is 'in zona' and everything falls
+    under 'altre' (the Concerti page then invites the user to set their zones)."""
     events = feed_events(db, user, all_italy=True)
+    if not (user.regions or user.provinces):
+        return [], events
     in_zona, altre = [], []
     for e in events:
         if geo.area_matches(user.regions, user.provinces, e.region, e.province):

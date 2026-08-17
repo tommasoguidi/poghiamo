@@ -11,30 +11,9 @@
     <div class="px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">{{ error }}</div>
     {% endif %}
 
-    <!-- Add a custom event (for gigs the sources miss). Shared with co-followers. -->
-    <details class="bg-card border border-zinc-800 rounded-2xl">
-        <summary class="px-5 py-3 cursor-pointer text-sm font-medium text-cream select-none hover:text-primary transition-colors">
-            + Aggiungi un concerto a mano
-        </summary>
-        <form action="/calendario/add" method="POST" class="px-5 pb-5 pt-1 grid sm:grid-cols-2 gap-3">
-            <input type="text" name="artist_name" placeholder="Artista *" required
-                   class="px-4 py-2.5 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm">
-            <input type="date" name="date" required
-                   class="px-4 py-2.5 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm">
-            <input type="text" name="city" placeholder="Città"
-                   class="px-4 py-2.5 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm">
-            <input type="text" name="venue" placeholder="Locale"
-                   class="px-4 py-2.5 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm">
-            <div class="sm:col-span-2 flex items-center justify-between gap-3">
-                <p class="text-xs text-zinc-500">Verrà aggiunto anche ai tuoi artisti seguiti e sarà visibile a chi segue lo stesso artista.</p>
-                <button type="submit" class="bg-primary hover:bg-rose-600 text-white text-sm font-semibold px-4 py-2 rounded-xl active:scale-95 transition-all shrink-0">Aggiungi</button>
-            </div>
-        </form>
-    </details>
-
     {% if not upcoming_groups and not past_groups %}
     <div class="text-center py-12 text-zinc-500 text-sm">
-        Non hai ancora salvato nessun concerto. Tocca la stella ☆ nei <a href="/" class="text-primary hover:underline">Concerti</a>, oppure aggiungine uno a mano qui sopra.
+        Non hai ancora salvato nessun concerto. Tocca la stella ☆ nei <a href="/" class="text-primary hover:underline">Concerti</a>, oppure crea un evento da lì.
     </div>
     {% endif %}
 

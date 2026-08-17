@@ -146,12 +146,37 @@ def test_visiting_feed_updates_last_seen(client, db):
     assert user.last_seen_events_at is not None
 
 
-def test_feed_redirects_to_settings_when_no_area(client, db):
+def test_feed_no_area_shows_prompt_and_events_in_altre(client, db):
+    user = make_user(db, username="alice", password="testpass123")
+    a = _artist(db)
+    _follow(db, user, a)
+    _event(db, a)  # no area set on the user
+    login(client, "alice", "testpass123")
+    page = client.get("/")
+    assert page.status_code == 200
+    assert "Non hai ancora scelto le tue zone" in page.text
+    assert "altre zone" in page.text.lower()  # the event is reachable there
+
+
+def test_new_user_lands_on_onboarding(client, db):
+    make_user(db, username="alice", password="testpass123")
+    resp = login(client, "alice", "testpass123")
+    assert resp.headers["location"] == "/settings?welcome=1"
+
+
+def test_returning_user_lands_on_calendario(client, db):
+    user = make_user(db, username="alice", password="testpass123")
+    user.regions = ["Lombardia"]
+    db.commit()
+    resp = login(client, "alice", "testpass123")
+    assert resp.headers["location"] == "/calendario"
+
+
+def test_comuni_search_endpoint(client, db):
     make_user(db, username="alice", password="testpass123")
     login(client, "alice", "testpass123")
-    resp = client.get("/", follow_redirects=False)
-    assert resp.status_code == 303
-    assert resp.headers["location"] == "/settings?hint=zone"
+    results = client.get("/api/comuni/search?q=firenz").json()["results"]
+    assert any(r["name"] == "Firenze" and r["sigla"] == "FI" for r in results)
 
 
 def test_feed_split(db):
@@ -171,7 +196,7 @@ def test_add_custom_event_follows_and_saves(client, db):
     user = make_user(db, username="alice", password="testpass123")
     login(client, "alice", "testpass123")
     resp = client.post(
-        "/calendario/add",
+        "/events/create",
         data={"artist_name": "Nuovo Artista", "date": str(FUTURE), "city": "Bologna", "venue": "Locale X"},
         follow_redirects=False,
     )
@@ -191,7 +216,7 @@ def test_custom_event_shared_and_deletable_by_creator_only(client, db):
     creator = make_user(db, username="alice", password="testpass123")
     other = make_user(db, username="bob", password="testpass123")
     login(client, "alice", "testpass123")
-    client.post("/calendario/add", data={"artist_name": "X", "date": str(FUTURE), "city": "Milano"},
+    client.post("/events/create", data={"artist_name": "X", "date": str(FUTURE), "city": "Milano"},
                 follow_redirects=False)
     ev = db.query(Event).one()
 
@@ -213,7 +238,7 @@ def test_custom_event_reuses_existing_scraped_event(client, db):
     a = _artist(db, "Faccianuvola")
     scraped = _event(db, a, date=FUTURE, city="Milano")  # a scraped (added_by NULL) event
     login(client, "alice", "testpass123")
-    client.post("/calendario/add", data={"artist_name": "Faccianuvola", "date": str(FUTURE), "city": "Milano"},
+    client.post("/events/create", data={"artist_name": "Faccianuvola", "date": str(FUTURE), "city": "Milano"},
                 follow_redirects=False)
     # No duplicate event; the scraped one is just saved
     assert db.query(Event).count() == 1

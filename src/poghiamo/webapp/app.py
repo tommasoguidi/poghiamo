@@ -87,6 +87,20 @@ async def handle_redirect_to_login(request: Request, exc: RedirectToLogin):
     return RedirectResponse("/login", status_code=303)
 
 
+def _landing_url(db, user) -> str:
+    """Where a just-logged-in user lands: onboarding for a brand-new account
+    (no zones, no follows), otherwise the Calendario home."""
+    has_follows = (
+        db.query(Follow)
+        .filter(Follow.user_id == user.id, Follow.state == "active")
+        .first()
+        is not None
+    )
+    if not has_follows and not (user.regions or user.provinces):
+        return "/settings?welcome=1"
+    return "/calendario"
+
+
 # --- AUTH ROUTES ---
 
 
@@ -118,7 +132,7 @@ def login(
             context={"error": "Nome utente o password non validi"},
         )
     request.session["user_id"] = user.id
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse(_landing_url(db, user), status_code=303)
 
 
 @app.get("/signup", response_class=HTMLResponse)
@@ -194,7 +208,8 @@ def signup(
     db.commit()
 
     request.session["user_id"] = user.id
-    return RedirectResponse("/", status_code=303)
+    # Brand-new account: start the onboarding (set zones, then add artists).
+    return RedirectResponse("/settings?welcome=1", status_code=303)
 
 
 @app.post("/logout")
@@ -212,10 +227,6 @@ def index(
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
 ):
-    # "In zona" needs an area to be meaningful: nudge to settings when unset.
-    if not (user.regions or user.provinces):
-        return RedirectResponse("/settings?hint=zone", status_code=303)
-
     in_zona, altre = feed.feed_split(db, user)
     saved_ids = feed.saved_event_ids(db, user)
     feed.annotate(in_zona, last_seen=user.last_seen_events_at, saved_ids=saved_ids, user=user)
@@ -226,8 +237,18 @@ def index(
     return templates.TemplateResponse(
         request=request,
         name="feed.html",
-        context={"user": user, "in_zona": in_zona, "altre": altre},
+        context={
+            "user": user,
+            "in_zona": in_zona,
+            "altre": altre,
+            "has_areas": bool(user.regions or user.provinces),
+        },
     )
+
+
+@app.get("/api/comuni/search")
+def api_comuni_search(q: str = "", user: User = Depends(require_user)):
+    return JSONResponse({"results": geo.search_comuni(q)})
 
 
 @app.get("/calendario", response_class=HTMLResponse)
@@ -253,31 +274,41 @@ def calendario(
     )
 
 
-@app.post("/calendario/add")
+@app.post("/events/create")
 def add_custom_event(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
     artist_name: str = Form(...),
     date: str = Form(...),
-    city: str = Form(None),
+    city: str = Form(...),
     venue: str = Form(None),
+    deezer_id: int = Form(None),
+    image_url: str = Form(None),
 ):
     from datetime import date as _date
 
     artist_name = artist_name.strip()
+    city = city.strip()
     try:
         when = _date.fromisoformat(date)
     except ValueError:
         return RedirectResponse("/calendario?error=Data+non+valida", status_code=303)
-    if not artist_name:
-        return RedirectResponse("/calendario?error=Manca+l'artista", status_code=303)
+    if not artist_name or not city:
+        return RedirectResponse("/calendario?error=Artista,+data+e+città+sono+obbligatori", status_code=303)
 
     # Find or create the artist, and follow it (reuse the manual-add path's rules).
     normalized = artist_search.normalize_name(artist_name)
-    artist = db.query(Artist).filter(Artist.name_normalized == normalized).first()
+    artist = None
+    if deezer_id is not None:
+        artist = db.query(Artist).filter(Artist.deezer_id == deezer_id).first()
     if artist is None:
-        artist = Artist(name=artist_name, name_normalized=normalized)
+        artist = db.query(Artist).filter(Artist.name_normalized == normalized).first()
+    if artist is None:
+        artist = Artist(
+            name=artist_name, name_normalized=normalized, deezer_id=deezer_id,
+            image_url=(image_url or None),
+        )
         db.add(artist)
         db.flush()
         artist_search.maybe_retry_enrichment([artist.id], background_tasks)
@@ -391,19 +422,24 @@ def artists_page(
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
-    sort: str = "name",
 ):
-    q = (
+    follows = (
         db.query(Follow)
         .options(joinedload(Follow.artist))
         .join(Artist, Follow.artist_id == Artist.id)
         .filter(Follow.user_id == user.id, Follow.state == "active")
+        .order_by(Artist.name_normalized)
+        .all()
     )
-    q = q.order_by(Follow.created_at.desc()) if sort == "recent" else q.order_by(Artist.name_normalized)
+    # Identity of already-followed artists, so the add-search can flag them.
+    followed = {
+        "deezer": [f.artist.deezer_id for f in follows if f.artist.deezer_id is not None],
+        "names": [f.artist.name_normalized for f in follows],
+    }
     return templates.TemplateResponse(
         request=request,
         name="artists.html",
-        context={"user": user, "follows": q.all(), "sort": sort},
+        context={"user": user, "follows": follows, "followed": followed},
     )
 
 
@@ -420,7 +456,8 @@ def api_artists_search(
     except requests.RequestException as e:
         logger.warning(f"Deezer search failed for '{q}': {e}")
         return JSONResponse({"results": [], "degraded": True})
-    return JSONResponse({"results": [s.model_dump() for s in suggestions]})
+    results = [{**s.model_dump(), "label": s.name} for s in suggestions]
+    return JSONResponse({"results": results})
 
 
 @app.get("/api/artists/status")
@@ -569,6 +606,7 @@ def settings_page(
     error: str = None,
     saved: str = None,
     hint: str = None,
+    welcome: str = None,
 ):
     invite_tokens = []
     if user.is_admin:
@@ -588,6 +626,7 @@ def settings_page(
             "error": error,
             "saved": saved,
             "hint": hint,
+            "welcome": welcome,
             # Flat searchable list for the area picker: regions first, then provinces.
             "areas": (
                 [{"type": "region", "value": r, "label": r, "region": r} for r in geo.regions()]

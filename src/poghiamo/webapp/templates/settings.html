@@ -19,6 +19,14 @@
         Imposta le tue zone di interesse per vedere i concerti in zona.
     </div>
     {% endif %}
+    {% if welcome %}
+    <div class="px-5 py-4 bg-primary/10 border border-primary/30 rounded-xl text-sm space-y-1">
+        <p class="text-cream font-semibold">Benvenuto su poghiamo 🎸</p>
+        <p class="text-zinc-300">Due passi per iniziare:</p>
+        <p class="text-zinc-300">1. Scegli le tue <span class="text-rose-300">zone di interesse</span> qui sotto.</p>
+        <p class="text-zinc-300">2. Poi aggiungi gli <a href="/artists" class="text-primary hover:underline">artisti che ami</a>.</p>
+    </div>
+    {% endif %}
 
     <!-- Areas of interest -->
     <div class="bg-card rounded-2xl p-8 border border-zinc-800">
@@ -190,6 +198,16 @@
         {% endif %}
     </div>
     {% endif %}
+
+    <div class="bg-card rounded-2xl p-6 border border-zinc-800 flex items-center justify-between gap-4">
+        <div>
+            <h2 class="text-base font-semibold text-cream">Sessione</h2>
+            <p class="text-sm text-zinc-400">Esci da questo dispositivo.</p>
+        </div>
+        <form action="/logout" method="POST">
+            <button type="submit" class="bg-zinc-800 hover:bg-zinc-700 text-cream text-sm font-semibold px-5 py-2.5 rounded-xl active:scale-95 transition-all">Esci</button>
+        </form>
+    </div>
 
     <div class="bg-card rounded-2xl p-8 border border-red-900/40">
         <h2 class="text-lg font-semibold text-red-400 mb-1">Elimina account</h2>

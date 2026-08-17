@@ -1,21 +1,23 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="max-w-3xl mx-auto px-6 py-16 space-y-8">
-    <div>
-        <h1 class="text-2xl font-bold text-cream mb-2">Artisti</h1>
-        <p class="text-zinc-400 text-sm">Cerca un artista e seguilo: i suoi concerti in Italia finiranno nel tuo feed.</p>
+<div class="max-w-3xl mx-auto px-6 py-12 space-y-6">
+    <div class="flex items-center justify-between gap-4">
+        <h1 class="text-2xl font-bold text-cream">Artisti che amo</h1>
+        <button type="button" onclick="toggleAdd()"
+                class="bg-primary hover:bg-rose-600 text-white text-sm font-semibold px-4 py-2 rounded-xl active:scale-95 transition-all shrink-0">
+            + Aggiungi
+        </button>
     </div>
 
-    <!-- Search + add -->
-    <div class="bg-card rounded-2xl p-6 border border-zinc-800 relative">
-        <input type="text" id="artist-search" placeholder="Cerca un artista…" autocomplete="off"
+    <!-- Add-search: hidden until the + button is pressed -->
+    <div id="add-panel" class="hidden bg-card rounded-2xl p-6 border border-zinc-800 relative">
+        <input type="text" id="artist-search" placeholder="Cerca un artista da seguire…" autocomplete="off"
                class="block w-full px-4 py-3 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all">
         <div id="suggestions" class="hidden absolute left-6 right-6 mt-2 bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden z-40 shadow-2xl"></div>
         <p id="search-hint" class="hidden text-xs text-zinc-500 mt-2">
             Ricerca esterna non disponibile ora: puoi comunque aggiungere il nome così com'è.
         </p>
-
         <form id="add-form" action="/artists/add" method="POST" class="hidden">
             <input type="hidden" name="name" id="add-name">
             <input type="hidden" name="deezer_id" id="add-deezer-id">
@@ -23,20 +25,20 @@
         </form>
     </div>
 
-    <!-- Filter + sort the followed list -->
     {% if follows %}
     <div class="flex items-center justify-between gap-4 flex-wrap">
-        <input type="text" id="filter-followed" placeholder="Filtra i seguiti…" autocomplete="off"
+        <input type="text" id="filter-followed" placeholder="Filtra…" autocomplete="off"
                class="flex-1 min-w-[10rem] px-4 py-2 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-sm">
         <div class="flex items-center gap-1 text-xs">
-            <a href="/artists?sort=name" class="px-3 py-1.5 rounded-full transition-colors {{ 'bg-primary/10 text-rose-300' if sort != 'recent' else 'text-zinc-400 hover:text-cream' }}">A-Z</a>
-            <a href="/artists?sort=recent" class="px-3 py-1.5 rounded-full transition-colors {{ 'bg-primary/10 text-rose-300' if sort == 'recent' else 'text-zinc-400 hover:text-cream' }}">Aggiunti di recente</a>
+            <button type="button" id="sort-name" onclick="cycleSort('name')" class="px-3 py-1.5 rounded-full text-zinc-400 hover:text-cream transition-colors">Nome</button>
+            <button type="button" id="sort-followed" onclick="cycleSort('followed')" class="px-3 py-1.5 rounded-full text-zinc-400 hover:text-cream transition-colors">Aggiunti</button>
         </div>
     </div>
 
     <ul class="space-y-3" id="followed-list">
         {% for f in follows %}
-        <li class="flex items-center justify-between gap-4 bg-card border border-zinc-800 rounded-xl px-4 py-3" data-name="{{ f.artist.name|lower }}">
+        <li class="flex items-center justify-between gap-4 bg-card border border-zinc-800 rounded-xl px-4 py-3"
+            data-name="{{ f.artist.name|lower }}" data-followed="{{ f.created_at.isoformat() if f.created_at else '' }}">
             <div class="flex items-center gap-3 min-w-0">
                 {% if f.artist.image_url %}
                 <img src="{{ f.artist.image_url }}" alt="" class="w-10 h-10 rounded-full object-cover bg-zinc-800">
@@ -63,12 +65,27 @@
     </ul>
     {% else %}
     <div class="text-center py-12 text-zinc-500 text-sm">
-        Non segui ancora nessuno. Comincia dalla ricerca qui sopra.
+        Non ami ancora nessun artista. Tocca <span class="text-primary">+ Aggiungi</span> per cominciare.
     </div>
     {% endif %}
 </div>
 
 <script>
+const FOLLOWED_DEEZER = new Set({{ followed.deezer | tojson }});
+const FOLLOWED_NAMES = new Set({{ followed.names | tojson }});
+function normName(s) {
+    return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+function isFollowed(r) {
+    return (r.deezer_id != null && FOLLOWED_DEEZER.has(r.deezer_id)) || FOLLOWED_NAMES.has(normName(r.name));
+}
+
+function toggleAdd() {
+    var p = document.getElementById("add-panel");
+    p.classList.toggle("hidden");
+    if (!p.classList.contains("hidden")) document.getElementById("artist-search").focus();
+}
+
 (function () {
     const input = document.getElementById("artist-search");
     const box = document.getElementById("suggestions");
@@ -86,21 +103,28 @@
     function render(results, query) {
         box.innerHTML = "";
         results.forEach(function (r) {
+            const followed = isFollowed(r);
             const btn = document.createElement("button");
             btn.type = "button";
-            btn.className = "w-full flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800 text-left";
+            btn.className = "w-full flex items-center gap-3 px-4 py-2.5 text-left " + (followed ? "opacity-50 cursor-default" : "hover:bg-zinc-800");
             const img = document.createElement("img");
             img.className = "w-8 h-8 rounded-full object-cover bg-zinc-800";
             if (r.image_url) img.src = r.image_url;
             const span = document.createElement("span");
-            span.className = "text-sm text-cream";
+            span.className = "text-sm text-cream flex-1";
             span.textContent = r.name;
             btn.appendChild(img);
             btn.appendChild(span);
-            btn.addEventListener("click", function () { submitAdd(r.name, r.deezer_id, r.image_url); });
+            if (followed) {
+                const tag = document.createElement("span");
+                tag.className = "text-[10px] uppercase tracking-wide text-emerald-400";
+                tag.textContent = "già seguito";
+                btn.appendChild(tag);
+            } else {
+                btn.addEventListener("click", function () { submitAdd(r.name, r.deezer_id, r.image_url); });
+            }
             box.appendChild(btn);
         });
-        // Free-text fallback, always available
         const free = document.createElement("button");
         free.type = "button";
         free.className = "w-full px-4 py-2.5 hover:bg-zinc-800 text-left text-sm text-zinc-400";
@@ -130,9 +154,7 @@
         if (!box.contains(e.target) && e.target !== input) box.classList.add("hidden");
     });
 
-    // Live status updates: while any artist is still "pending", poll the
-    // status endpoint (which also re-schedules stuck enrichments) and update
-    // rows in place; stops by itself once everything is settled.
+    // Live status updates while any artist is still "pending".
     function statusText(a) {
         if (a.status === "pending") return "identificazione in corso…";
         if (a.status === "unmatched") return "da verificare";
@@ -167,6 +189,36 @@
             li.style.display = (!q || li.dataset.name.indexOf(q) !== -1) ? "" : "none";
         });
     });
+})();
+
+// Tri-state client-side sort: each button cycles off -> asc -> desc -> off.
+(function () {
+    var list = document.getElementById("followed-list");
+    if (!list) return;
+    var original = Array.from(list.children);
+    var state = { name: 0, followed: 0 };   // 0 off, 1 asc, 2 desc
+    var LABELS = { name: "Nome", followed: "Aggiunti" };
+
+    window.cycleSort = function (key) {
+        var next = (state[key] + 1) % 3;
+        state = { name: 0, followed: 0 };
+        state[key] = next;
+        ["name", "followed"].forEach(function (k) {
+            var btn = document.getElementById("sort-" + k);
+            var arrow = state[k] === 1 ? " ↑" : state[k] === 2 ? " ↓" : "";
+            btn.textContent = LABELS[k] + arrow;
+            btn.className = "px-3 py-1.5 rounded-full transition-colors " +
+                (state[k] ? "bg-primary/10 text-rose-300" : "text-zinc-400 hover:text-cream");
+        });
+        if (next === 0) { original.forEach(function (li) { list.appendChild(li); }); return; }
+        var items = Array.from(list.children);
+        items.sort(function (a, b) {
+            var av = a.dataset[key] || "", bv = b.dataset[key] || "";
+            var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+            return next === 1 ? cmp : -cmp;
+        });
+        items.forEach(function (li) { list.appendChild(li); });
+    };
 })();
 </script>
 {% endblock %}

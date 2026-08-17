@@ -2,14 +2,27 @@
 
 {% block content %}
 <div class="max-w-3xl mx-auto px-6 py-12 space-y-6">
-    <h1 class="text-2xl font-bold text-cream">In zona</h1>
+    <div class="flex items-center justify-between gap-4">
+        <h1 class="text-2xl font-bold text-cream">In zona</h1>
+        <button type="button" onclick="openCreate()"
+                class="bg-primary hover:bg-rose-600 text-white text-sm font-semibold px-4 py-2 rounded-xl active:scale-95 transition-all shrink-0">
+            + Crea evento
+        </button>
+    </div>
 
     {% if in_zona %}
     <ul class="space-y-3">
         {% for e in in_zona %}{% include "_event_card.html" %}{% endfor %}
     </ul>
+    {% elif not has_areas %}
+    <div class="bg-card border border-zinc-800 rounded-2xl px-6 py-10 text-center text-sm">
+        <p class="text-cream font-medium mb-1">Non hai ancora scelto le tue zone</p>
+        <p class="text-zinc-400">Imposta le regioni o province che ti interessano per vedere qui i concerti vicino a te.</p>
+        <a href="/settings" class="inline-block mt-4 text-primary font-medium hover:underline">Vai a Impostazioni →</a>
+        <p class="text-zinc-600 text-xs mt-3">Intanto trovi tutti i concerti dei tuoi artisti in "altre zone" qui sotto.</p>
+    </div>
     {% else %}
-    <div class="text-center py-12 text-zinc-500 text-sm">
+    <div class="text-center py-10 text-zinc-500 text-sm">
         Nessun concerto nelle tue zone al momento.
         <div class="mt-1"><a href="/settings" class="text-primary hover:underline">Modifica le zone</a></div>
     </div>
@@ -25,16 +38,99 @@
             {% for e in altre %}{% include "_event_card.html" %}{% endfor %}
         </ul>
     </div>
-    <script>
-    function toggleAltre() {
-        var list = document.getElementById("altre");
-        var btn = document.getElementById("toggle-altre");
-        var hidden = list.classList.toggle("hidden");
-        btn.textContent = hidden
-            ? "Mostra concerti in altre zone ({{ altre|length }})"
-            : "Nascondi le altre zone";
-    }
-    </script>
     {% endif %}
 </div>
+
+<!-- Create-event modal -->
+<div id="create-modal" class="hidden fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-4 overflow-y-auto">
+    <div class="bg-card border border-zinc-800 rounded-2xl w-full max-w-md mt-16 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-semibold text-cream">Crea un evento</h2>
+            <button type="button" onclick="closeCreate()" class="text-zinc-500 hover:text-cream text-xl leading-none">×</button>
+        </div>
+        <p class="text-xs text-zinc-500 mb-4">Per i concerti che le fonti non trovano. Sarà visibile a chi segue lo stesso artista, aggiunto ai tuoi seguiti e salvato nel tuo calendario.</p>
+        <form action="/events/create" method="POST" class="space-y-3">
+            <div class="relative">
+                <input type="text" name="artist_name" id="c-artist" placeholder="Artista *" required autocomplete="off"
+                       class="block w-full px-4 py-2.5 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm">
+                <input type="hidden" name="deezer_id" id="c-deezer">
+                <input type="hidden" name="image_url" id="c-image">
+                <div id="c-artist-box" class="hidden absolute left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden z-10 shadow-2xl"></div>
+            </div>
+            <input type="date" name="date" required
+                   class="block w-full px-4 py-2.5 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm">
+            <div class="relative">
+                <input type="text" name="city" id="c-city" placeholder="Città *" required autocomplete="off"
+                       class="block w-full px-4 py-2.5 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm">
+                <div id="c-city-box" class="hidden absolute left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden z-10 shadow-2xl"></div>
+            </div>
+            <input type="text" name="venue" placeholder="Locale"
+                   class="block w-full px-4 py-2.5 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm">
+            <button type="submit" class="w-full bg-primary hover:bg-rose-600 text-white font-semibold py-2.5 rounded-xl active:scale-95 transition-all">Crea</button>
+        </form>
+    </div>
+</div>
+
+<script>
+function toggleAltre() {
+    var list = document.getElementById("altre");
+    var btn = document.getElementById("toggle-altre");
+    var hidden = list.classList.toggle("hidden");
+    btn.textContent = hidden
+        ? "Mostra concerti in altre zone ({{ altre|length }})"
+        : "Nascondi le altre zone";
+}
+function openCreate() { document.getElementById("create-modal").classList.remove("hidden"); }
+function closeCreate() { document.getElementById("create-modal").classList.add("hidden"); }
+document.getElementById("create-modal").addEventListener("click", function (e) {
+    if (e.target === this) closeCreate();
+});
+
+// Generic typeahead: fetch url + "&q=", render items, call onPick(item).
+function attachAutocomplete(input, box, url, onPick) {
+    var timer = null;
+    input.addEventListener("input", function () {
+        clearTimeout(timer);
+        var q = input.value.trim();
+        if (q.length < 2) { box.classList.add("hidden"); return; }
+        timer = setTimeout(function () {
+            fetch(url + encodeURIComponent(q))
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    box.innerHTML = "";
+                    (data.results || []).forEach(function (item) {
+                        var b = document.createElement("button");
+                        b.type = "button";
+                        b.className = "w-full text-left px-4 py-2 hover:bg-zinc-800 text-sm text-cream";
+                        b.textContent = item.label;
+                        b.addEventListener("click", function () { onPick(item); box.classList.add("hidden"); });
+                        box.appendChild(b);
+                    });
+                    box.classList.toggle("hidden", !box.children.length);
+                })
+                .catch(function () { box.classList.add("hidden"); });
+        }, 250);
+    });
+    document.addEventListener("click", function (e) {
+        if (e.target !== input && !box.contains(e.target)) box.classList.add("hidden");
+    });
+}
+
+attachAutocomplete(
+    document.getElementById("c-artist"),
+    document.getElementById("c-artist-box"),
+    "/api/artists/search?q=",
+    function (item) {
+        document.getElementById("c-artist").value = item.name;
+        document.getElementById("c-deezer").value = item.deezer_id || "";
+        document.getElementById("c-image").value = item.image_url || "";
+    }
+);
+attachAutocomplete(
+    document.getElementById("c-city"),
+    document.getElementById("c-city-box"),
+    "/api/comuni/search?q=",
+    function (item) { document.getElementById("c-city").value = item.name; }
+);
+</script>
 {% endblock %}

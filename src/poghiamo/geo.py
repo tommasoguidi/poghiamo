@@ -99,6 +99,33 @@ def provinces_of_comune(name: str) -> list[str]:
     return _comune_index().get(name.strip().casefold(), [])
 
 
+@lru_cache(maxsize=1)
+def _comuni_sorted() -> list[tuple[str, str]]:
+    """[(name, sigla), ...] sorted by name, for the città autocomplete."""
+    return sorted((name, sigla) for name, sigla in _data()["comuni"])
+
+
+def search_comuni(query: str, limit: int = 10) -> list[dict]:
+    """Autocomplete comuni by name (prefix matches first, then substring)."""
+    q = query.strip().casefold()
+    if len(q) < 2:
+        return []
+    prefix, other = [], []
+    for name, sigla in _comuni_sorted():
+        low = name.casefold()
+        if low.startswith(q):
+            prefix.append((name, sigla))
+        elif q in low:
+            other.append((name, sigla))
+        if len(prefix) >= limit:
+            break
+    picked = (prefix + other)[:limit]
+    reg = region_of_province()
+    return [
+        {"name": n, "sigla": s, "region": reg.get(s), "label": f"{n} ({s})"} for n, s in picked
+    ]
+
+
 def area_matches(user_regions: list[str], user_provinces: list[str], region: str | None, province: str | None) -> bool:
     """True if an event located in (region, province) falls inside the user's
     selected areas. Empty preferences mean all of Italy."""
