@@ -194,7 +194,7 @@ def test_feed_no_area_shows_prompt_and_events_in_altre(client, db):
 def test_new_user_lands_on_onboarding(client, db):
     make_user(db, username="alice", password="testpass123")
     resp = login(client, "alice", "testpass123")
-    assert resp.headers["location"] == "/settings?welcome=1"
+    assert resp.headers["location"] == "/settings?tour=1"
 
 
 def test_returning_user_lands_on_calendario(client, db):

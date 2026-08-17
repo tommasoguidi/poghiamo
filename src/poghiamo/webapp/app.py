@@ -98,7 +98,7 @@ def _landing_url(db, user) -> str:
         is not None
     )
     if not has_follows and not (user.regions or user.provinces):
-        return "/settings?welcome=1"
+        return "/settings?tour=1"
     return "/calendario"
 
 
@@ -209,8 +209,8 @@ def signup(
     db.commit()
 
     request.session["user_id"] = user.id
-    # Brand-new account: start the onboarding (set zones, then add artists).
-    return RedirectResponse("/settings?welcome=1", status_code=303)
+    # Brand-new account: start the guided tour (zones → artists → concerti).
+    return RedirectResponse("/settings?tour=1", status_code=303)
 
 
 @app.post("/logout")
