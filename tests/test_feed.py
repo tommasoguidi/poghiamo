@@ -132,6 +132,39 @@ def test_calendar_splits_upcoming_and_past(db):
     assert [e.city for e in past] == ["Roma"]
 
 
+def test_calendar_anchor_skips_empty_current_month(db):
+    """If the current month has no saved events, the view anchors on the next
+    future month that does."""
+    user = make_user(db, username="alice")
+    a = _artist(db)
+    som = dt.date.today().replace(day=1)
+    past = _event(db, a, date=som - dt.timedelta(days=40), city="Roma")
+    fut = _event(db, a, date=som + dt.timedelta(days=40), city="Milano")
+    db.add(SavedEvent(user_id=user.id, event_id=past.id))
+    db.add(SavedEvent(user_id=user.id, event_id=fut.id))
+    db.commit()
+
+    groups = feed.calendar_month_groups(db, user)
+    anchored = [g for g in groups if g["anchor"]]
+    assert len(anchored) == 1
+    assert anchored[0]["is_past"] is False and anchored[0]["is_current"] is False
+    assert anchored[0]["events"][0].city == "Milano"  # the future month, not the past
+
+
+def test_calendar_anchor_is_current_month_when_present(db):
+    user = make_user(db, username="alice")
+    a = _artist(db)
+    som = dt.date.today().replace(day=1)
+    this_month = _event(db, a, date=som + dt.timedelta(days=2), city="Napoli")
+    fut = _event(db, a, date=som + dt.timedelta(days=40), city="Milano")
+    db.add(SavedEvent(user_id=user.id, event_id=this_month.id))
+    db.add(SavedEvent(user_id=user.id, event_id=fut.id))
+    db.commit()
+
+    anchored = [g for g in feed.calendar_month_groups(db, user) if g["anchor"]]
+    assert anchored[0]["is_current"] is True
+
+
 def test_visiting_feed_updates_last_seen(client, db):
     user = make_user(db, username="alice", password="testpass123")
     user.regions = ["Lombardia"]  # in-zona needs an area, else it redirects to settings

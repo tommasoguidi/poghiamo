@@ -11,35 +11,29 @@
     <div class="px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">{{ error }}</div>
     {% endif %}
 
-    {% if not upcoming_groups and not past_groups %}
+    {% if not groups %}
     <div class="text-center py-12 text-zinc-500 text-sm">
         Non hai ancora salvato nessun concerto. Tocca la stella ☆ nei <a href="/" class="text-primary hover:underline">Concerti</a>, oppure crea un evento da lì.
     </div>
     {% endif %}
 
-    {% for first, group in upcoming_groups %}
-    <div>
-        <h2 class="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-3">{{ first | it_month }}</h2>
+    {% for g in groups %}
+    <div {% if g.anchor %}id="now"{% endif %} class="scroll-mt-20 {% if g.is_past %}opacity-40{% endif %}">
+        <h2 class="text-sm font-semibold uppercase tracking-wide mb-3 {{ 'text-primary' if g.is_current else 'text-zinc-500' }}">
+            {{ g.first | it_month }}{% if g.is_past %} · passato{% endif %}
+        </h2>
         <ul class="space-y-3">
-            {% for e in group %}{% include "_event_card.html" %}{% endfor %}
+            {% for e in g.events %}{% include "_event_card.html" %}{% endfor %}
         </ul>
     </div>
     {% endfor %}
-
-    {% if past_groups %}
-    <div class="pt-4 border-t border-zinc-800">
-        <h2 class="text-lg font-semibold text-cream mb-4">Passati</h2>
-        <div class="space-y-8 opacity-70">
-            {% for first, group in past_groups %}
-            <div>
-                <h3 class="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-3">{{ first | it_month }}</h3>
-                <ul class="space-y-3">
-                    {% for e in group %}{% include "_event_card.html" %}{% endfor %}
-                </ul>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
 </div>
+
+<script>
+// Open the calendar focused on the current (or next upcoming) month.
+(function () {
+    var now = document.getElementById("now");
+    if (now) now.scrollIntoView({ block: "start" });
+})();
+</script>
 {% endblock %}

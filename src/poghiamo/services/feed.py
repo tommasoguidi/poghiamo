@@ -106,6 +106,34 @@ def calendar_events(db, user):
     return upcoming, past
 
 
+def saved_events_chrono(db, user):
+    """All the user's saved events, oldest first (for a single timeline view)."""
+    ids = saved_event_ids(db, user)
+    if not ids:
+        return []
+    return _load(db, Event.id.in_(ids), Event.date.asc())
+
+
+def calendar_month_groups(db, user):
+    """Month groups of the user's saved events (chronological), each tagged
+    is_past / is_current, with `anchor` on the current-or-next month so the view
+    can focus there on load."""
+    events = saved_events_chrono(db, user)
+    today = dt.date.today()
+    cur = (today.year, today.month)
+    groups = []
+    anchor_done = False
+    for first, evs in group_by_month(events):
+        ym = (first.year, first.month)
+        is_past = ym < cur
+        g = {"first": first, "events": evs, "is_past": is_past, "is_current": ym == cur, "anchor": False}
+        if not is_past and not anchor_done:
+            g["anchor"] = True
+            anchor_done = True
+        groups.append(g)
+    return groups
+
+
 def group_by_month(events):
     """Ordered [(date-of-first-in-month, [events]), ...], preserving input order."""
     groups: list[tuple[dt.date, list]] = []

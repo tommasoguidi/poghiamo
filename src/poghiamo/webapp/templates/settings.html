@@ -161,10 +161,42 @@
     })();
     </script>
 
+    <div class="bg-card rounded-2xl p-6 border border-zinc-800 flex items-center justify-between gap-4">
+        <div>
+            <h2 class="text-base font-semibold text-cream">Sessione</h2>
+            <p class="text-sm text-zinc-400">Esci da questo dispositivo.</p>
+        </div>
+        <form action="/logout" method="POST">
+            <button type="submit" class="bg-zinc-800 hover:bg-zinc-700 text-cream text-sm font-semibold px-5 py-2.5 rounded-xl active:scale-95 transition-all">Esci</button>
+        </form>
+    </div>
+
+    <div class="bg-card rounded-2xl p-8 border border-red-900/40">
+        <h2 class="text-lg font-semibold text-red-400 mb-1">Elimina account</h2>
+        <p class="text-sm text-zinc-400 mb-4">
+            Elimina il tuo account e tutto ciò che gli appartiene, subito e per sempre.
+        </p>
+        {% if error %}
+        <div class="mb-4 px-4 py-2.5 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">{{ error }}</div>
+        {% endif %}
+        <form action="/account/delete" method="POST" class="flex flex-col sm:flex-row gap-3"
+              onsubmit="return confirm('Eliminare definitivamente il tuo account?');">
+            <input type="password" name="password" placeholder="Conferma con la tua password" required
+                   autocomplete="current-password"
+                   class="flex-1 px-4 py-2.5 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none transition-all text-sm">
+            <button type="submit"
+                    class="bg-red-600/80 hover:bg-red-600 text-white text-sm font-semibold px-5 py-2.5 rounded-xl active:scale-95 transition-all">
+                Elimina
+            </button>
+        </form>
+    </div>
+
     {% if user.is_admin %}
+    <h2 class="text-sm font-semibold text-zinc-500 uppercase tracking-wide pt-2">Admin</h2>
+
     <div class="bg-card rounded-2xl p-8 border border-zinc-800">
         <h2 class="text-lg font-semibold text-cream mb-1">Token di invito</h2>
-        <p class="text-sm text-zinc-400 mb-6">Monouso, validi 7 giorni. Condividi il link con chi vuoi invitare.</p>
+        <p class="text-sm text-zinc-400 mb-6">Monouso, validi 7 giorni. Copia il token o condividi il link.</p>
 
         <form action="/admin/tokens/generate" method="POST" class="mb-6">
             <button type="submit"
@@ -186,9 +218,15 @@
                     {% endif %}
                 </div>
                 {% if not t.used_by %}
-                <form action="/admin/tokens/{{ t.id }}/revoke" method="POST">
-                    <button type="submit" class="text-xs text-zinc-400 hover:text-red-400 transition-colors">Revoca</button>
-                </form>
+                <div class="flex items-center gap-2 shrink-0">
+                    <button type="button" class="text-xs text-zinc-400 hover:text-primary transition-colors"
+                            onclick="copyText('{{ t.token }}', this)">Copia</button>
+                    <button type="button" class="text-xs text-zinc-400 hover:text-primary transition-colors"
+                            onclick="shareInvite('{{ webapp_url }}/signup?invite={{ t.token }}', this)">Condividi</button>
+                    <form action="/admin/tokens/{{ t.id }}/revoke" method="POST" class="inline">
+                        <button type="submit" class="text-xs text-zinc-400 hover:text-red-400 transition-colors">Revoca</button>
+                    </form>
+                </div>
                 {% endif %}
             </li>
             {% endfor %}
@@ -197,33 +235,55 @@
         <p class="text-sm text-zinc-500">Nessun token attivo.</p>
         {% endif %}
     </div>
+
+    <div class="bg-card rounded-2xl p-8 border border-zinc-800">
+        <h2 class="text-lg font-semibold text-cream mb-1">Utenti registrati</h2>
+        <p class="text-sm text-zinc-400 mb-4">Elimina l'account di un altro utente, e tutto ciò che gli appartiene.</p>
+        {% if all_users %}
+        <input type="password" id="admin-pw" placeholder="La tua password (per confermare)" autocomplete="current-password"
+               class="block w-full mb-4 px-4 py-2.5 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-red-500 outline-none text-sm">
+        <ul class="space-y-2">
+            {% for u in all_users %}
+            <li class="flex items-center justify-between gap-4 bg-zinc-900 rounded-xl px-4 py-2.5 text-sm">
+                <span class="text-cream">{{ u.username }}{% if u.is_admin %} <span class="text-xs text-primary">admin</span>{% endif %}</span>
+                <form action="/admin/users/{{ u.id }}/delete" method="POST">
+                    <input type="hidden" name="password">
+                    <button type="button" data-username="{{ u.username }}" onclick="delUser(this)"
+                            class="text-xs text-zinc-400 hover:text-red-400 transition-colors">Elimina</button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-sm text-zinc-500">Nessun altro utente registrato.</p>
+        {% endif %}
+    </div>
     {% endif %}
-
-    <div class="bg-card rounded-2xl p-6 border border-zinc-800 flex items-center justify-between gap-4">
-        <div>
-            <h2 class="text-base font-semibold text-cream">Sessione</h2>
-            <p class="text-sm text-zinc-400">Esci da questo dispositivo.</p>
-        </div>
-        <form action="/logout" method="POST">
-            <button type="submit" class="bg-zinc-800 hover:bg-zinc-700 text-cream text-sm font-semibold px-5 py-2.5 rounded-xl active:scale-95 transition-all">Esci</button>
-        </form>
-    </div>
-
-    <div class="bg-card rounded-2xl p-8 border border-red-900/40">
-        <h2 class="text-lg font-semibold text-red-400 mb-1">Elimina account</h2>
-        <p class="text-sm text-zinc-400 mb-6">
-            Elimina il tuo account e tutto ciò che gli appartiene, subito e per sempre.
-        </p>
-        <form action="/account/delete" method="POST" class="flex flex-col sm:flex-row gap-3"
-              onsubmit="return confirm('Eliminare definitivamente il tuo account?');">
-            <input type="password" name="password" placeholder="Conferma con la tua password" required
-                   autocomplete="current-password"
-                   class="flex-1 px-4 py-2.5 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none transition-all text-sm">
-            <button type="submit"
-                    class="bg-red-600/80 hover:bg-red-600 text-white text-sm font-semibold px-5 py-2.5 rounded-xl active:scale-95 transition-all">
-                Elimina
-            </button>
-        </form>
-    </div>
 </div>
+<script>
+function copyText(text, btn) {
+    navigator.clipboard.writeText(text).then(function () {
+        var orig = btn.textContent;
+        btn.textContent = "Copiato!";
+        setTimeout(function () { btn.textContent = orig; }, 1500);
+    });
+}
+function shareInvite(url, btn) {
+    if (navigator.share) {
+        navigator.share({ title: "poghiamo", text: "Ti ho invitato su poghiamo", url: url }).catch(function () {});
+    } else {
+        navigator.clipboard.writeText(url).then(function () {
+            if (btn) { var o = btn.textContent; btn.textContent = "Copiato!"; setTimeout(function () { btn.textContent = o; }, 1500); }
+        });
+    }
+}
+function delUser(btn) {
+    var pw = document.getElementById("admin-pw").value;
+    if (!pw) { alert("Inserisci la tua password per eliminare un account."); return; }
+    if (!confirm("Eliminare l'account di " + btn.dataset.username + "?")) return;
+    var form = btn.form;
+    form.querySelector("input[name=password]").value = pw;
+    form.submit();
+}
+</script>
 {% endblock %}

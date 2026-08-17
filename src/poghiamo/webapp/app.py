@@ -258,19 +258,14 @@ def calendario(
     user: User = Depends(require_user),
     error: str = None,
 ):
-    upcoming, past = feed.calendar_events(db, user)
+    groups = feed.calendar_month_groups(db, user)
     saved_ids = feed.saved_event_ids(db, user)
-    feed.annotate(upcoming, last_seen=user.last_seen_events_at, saved_ids=saved_ids, user=user)
-    feed.annotate(past, last_seen=user.last_seen_events_at, saved_ids=saved_ids, user=user)
+    for g in groups:
+        feed.annotate(g["events"], last_seen=user.last_seen_events_at, saved_ids=saved_ids, user=user)
     return templates.TemplateResponse(
         request=request,
         name="calendario.html",
-        context={
-            "user": user,
-            "error": error,
-            "upcoming_groups": feed.group_by_month(upcoming),
-            "past_groups": feed.group_by_month(past),
-        },
+        context={"user": user, "error": error, "groups": groups},
     )
 
 
@@ -609,6 +604,7 @@ def settings_page(
     welcome: str = None,
 ):
     invite_tokens = []
+    all_users = []
     if user.is_admin:
         cutoff = datetime.now(timezone.utc) - timedelta(days=7)
         invite_tokens = (
@@ -617,12 +613,17 @@ def settings_page(
             .order_by(InviteToken.created_at.desc())
             .all()
         )
+        # Everyone but the admin themselves (they manage their own account below).
+        all_users = (
+            db.query(User).filter(User.id != user.id).order_by(User.username).all()
+        )
     return templates.TemplateResponse(
         request=request,
         name="settings.html",
         context={
             "user": user,
             "invite_tokens": invite_tokens,
+            "all_users": all_users,
             "error": error,
             "saved": saved,
             "hint": hint,
@@ -705,30 +706,59 @@ def delete_account(
                 status_code=303,
             )
 
-    # Capture before delete: the ORM instance expires at commit.
-    username = user.username
-
-    # The user's follows go with the account.
-    db.query(Follow).filter(Follow.user_id == user.id).delete()
-
-    # Unused tokens the user created: delete. Used ones: keep for the audit
-    # trail, detached from the creator. The token the user consumed to join is
-    # retired for good (never resurrect a spent single-use invite).
-    db.query(InviteToken).filter(
-        InviteToken.created_by == user.id, InviteToken.used_by.is_(None)
-    ).delete()
-    db.query(InviteToken).filter(InviteToken.created_by == user.id).update(
-        {"created_by": None}
-    )
-    db.query(InviteToken).filter(InviteToken.used_by == user.id).update(
-        {"used_by": None, "revoked": True}
-    )
-    db.delete(user)
+    _purge_user(db, user)
     db.commit()
 
     request.session.clear()
-    logger.info(f"Account '{username}' deleted at the user's request.")
+    logger.info(f"Account '{user.username}' deleted at the user's request.")
     return RedirectResponse("/login", status_code=303)
+
+
+def _purge_user(db, target: User) -> None:
+    """Remove a user and everything attached to them, keeping shared data intact:
+    their bookmarks and follows go; the custom events they created stay (shared
+    with co-followers) but are detached; invite tokens keep their audit trail."""
+    db.query(SavedEvent).filter(SavedEvent.user_id == target.id).delete()
+    db.query(Follow).filter(Follow.user_id == target.id).delete()
+    # Custom events they created remain visible to co-followers, just orphaned.
+    db.query(Event).filter(Event.added_by_user_id == target.id).update(
+        {"added_by_user_id": None}
+    )
+    db.query(InviteToken).filter(
+        InviteToken.created_by == target.id, InviteToken.used_by.is_(None)
+    ).delete()
+    db.query(InviteToken).filter(InviteToken.created_by == target.id).update(
+        {"created_by": None}
+    )
+    db.query(InviteToken).filter(InviteToken.used_by == target.id).update(
+        {"used_by": None, "revoked": True}
+    )
+    db.delete(target)
+
+
+@app.post("/admin/users/{user_id}/delete")
+def admin_delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+    password: str = Form(...),
+):
+    # Deleting someone else's account is destructive: confirm the admin's password.
+    if not verify_password(password, admin.hashed_password):
+        return RedirectResponse("/settings?error=Password+errata", status_code=303)
+    target = db.get(User, user_id)
+    if target is None or target.id == admin.id:
+        # Admins remove their own account from the danger zone, not here.
+        return RedirectResponse("/settings", status_code=303)
+    if target.is_admin and db.query(User).filter(User.is_admin).count() <= 1:
+        return RedirectResponse(
+            "/settings?error=Non+puoi+eliminare+l'ultimo+admin", status_code=303
+        )
+    username = target.username
+    _purge_user(db, target)
+    db.commit()
+    logger.info(f"Admin '{admin.username}' deleted account '{username}'.")
+    return RedirectResponse("/settings", status_code=303)
 
 
 def main():

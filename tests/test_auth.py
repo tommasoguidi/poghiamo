@@ -126,6 +126,73 @@ def test_non_admin_cannot_generate_tokens(client, db):
     assert resp.status_code == 403
 
 
+def test_delete_account_clears_saved_events(client, db):
+    """Regression: a user with bookmarks can be deleted (FK previously blocked)."""
+    import datetime as dt
+
+    from poghiamo.database.models import Artist, Event, SavedEvent
+
+    make_user(db, username="admin", is_admin=True)
+    bob = make_user(db, username="bob", password="testpass123")
+    a = Artist(name="A", name_normalized="a")
+    db.add(a)
+    db.flush()
+    e = Event(artist_id=a.id, date=dt.date.today() + dt.timedelta(days=5), city_normalized="")
+    db.add(e)
+    db.flush()
+    db.add(SavedEvent(user_id=bob.id, event_id=e.id))
+    db.commit()
+
+    login(client, "bob", "testpass123")
+    resp = client.post("/account/delete", data={"password": "testpass123"}, follow_redirects=False)
+    assert resp.status_code == 303
+    assert db.query(User).filter(User.username == "bob").first() is None
+    assert db.query(SavedEvent).count() == 0
+
+
+def test_admin_deletes_user_with_password(client, db):
+    make_user(db, username="admin", password="testpass123", is_admin=True)
+    bob = make_user(db, username="bob")
+    login(client, "admin", "testpass123")
+    resp = client.post(
+        f"/admin/users/{bob.id}/delete", data={"password": "testpass123"}, follow_redirects=False
+    )
+    assert resp.status_code == 303
+    assert db.query(User).filter(User.username == "bob").first() is None
+
+
+def test_admin_delete_user_wrong_password_does_nothing(client, db):
+    make_user(db, username="admin", password="testpass123", is_admin=True)
+    bob = make_user(db, username="bob")
+    login(client, "admin", "testpass123")
+    resp = client.post(
+        f"/admin/users/{bob.id}/delete", data={"password": "nope"}, follow_redirects=False
+    )
+    assert resp.headers["location"] == "/settings?error=Password+errata"
+    assert db.query(User).filter(User.username == "bob").first() is not None
+
+
+def test_admin_cannot_delete_self_via_user_list(client, db):
+    admin = make_user(db, username="admin", password="testpass123", is_admin=True)
+    login(client, "admin", "testpass123")
+    client.post(
+        f"/admin/users/{admin.id}/delete", data={"password": "testpass123"}, follow_redirects=False
+    )
+    assert db.query(User).filter(User.username == "admin").first() is not None
+
+
+def test_non_admin_cannot_delete_user(client, db):
+    make_user(db, username="admin", is_admin=True)
+    make_user(db, username="bob", password="testpass123")
+    victim = make_user(db, username="victim")
+    login(client, "bob", "testpass123")
+    resp = client.post(
+        f"/admin/users/{victim.id}/delete", data={"password": "x"}, follow_redirects=False
+    )
+    assert resp.status_code == 403
+    assert db.query(User).filter(User.username == "victim").first() is not None
+
+
 def test_delete_account_wrong_password(client, db):
     make_user(db, username="bob", password="testpass123")
     login(client, "bob", "testpass123")

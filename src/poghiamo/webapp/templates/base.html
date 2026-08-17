@@ -36,7 +36,7 @@
 {% if user %}
     {% set p = request.url.path %}
     <nav class="sticky top-0 z-50 bg-background/90 border-b border-zinc-800 px-6 py-3 flex items-center justify-between">
-        <a href="/" class="text-xl font-bold tracking-tight text-cream">poghiamo</a>
+        <a href="/" class="text-xl font-bold tracking-tight text-cream">poghi<span class="text-primary">amo</span></a>
         <div class="flex items-center gap-5">
             <a href="/" class="text-sm font-medium transition-colors {{ 'text-primary' if p == '/' else 'text-zinc-400 hover:text-cream' }}">Concerti</a>
             <a href="/artists" class="text-sm font-medium transition-colors {{ 'text-primary' if p.startswith('/artists') else 'text-zinc-400 hover:text-cream' }}">Artisti</a>
