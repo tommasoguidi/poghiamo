@@ -30,11 +30,10 @@ def run_backup():
 
 
 def run_scan_batch():
-    """Scan one batch of due artists. Each artist opens its own transaction so a
-    failure on one never rolls back the others."""
+    """Scan one batch of due artists. Each artist opens its own transaction (via
+    scan_artist_by_id) so a failure on one never rolls back the others."""
     from poghiamo.database.engine import SessionLocal
-    from poghiamo.database.models import Artist
-    from poghiamo.services.pipeline import artists_due_for_scan, scan_artist
+    from poghiamo.services.pipeline import artists_due_for_scan, scan_artist_by_id
 
     db = SessionLocal()
     try:
@@ -46,17 +45,7 @@ def run_scan_batch():
         return
     logger.info(f"Events sweep: {len(due_ids)} artist(s) due.")
     for artist_id in due_ids:
-        db = SessionLocal()
-        try:
-            artist = db.get(Artist, artist_id)
-            summary = scan_artist(db, artist)
-            db.commit()
-            logger.info(f"Scanned '{artist.name}': {summary}")
-        except Exception as e:
-            db.rollback()
-            logger.error(f"Scan failed for artist id={artist_id}: {e}", exc_info=True)
-        finally:
-            db.close()
+        scan_artist_by_id(artist_id)
 
 
 def main():

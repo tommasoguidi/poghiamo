@@ -83,6 +83,29 @@ def test_add_dedupes_across_users_and_free_text(client, db):
     assert db.query(Follow).count() == 2
 
 
+def test_new_artist_add_triggers_background_scan(client, db, monkeypatch):
+    """Adding a brand-new artist fires a background scan with its id; following
+    an already-known artist does not."""
+    import poghiamo.webapp.app as app_mod
+
+    scanned = []
+    monkeypatch.setattr(app_mod, "scan_artist_by_id", lambda artist_id: scanned.append(artist_id))
+    _login_user(client, db)
+
+    client.post(
+        "/artists/add", data={"name": "Faccianuvola", "deezer_id": "42"}, follow_redirects=False
+    )
+    artist = db.query(Artist).one()
+    assert scanned == [artist.id]  # scheduled once, ran after the response
+
+    # A second user follows the same (now-existing) artist: no new scan.
+    client.post("/logout", follow_redirects=False)
+    make_user(db, username="bob", password="testpass123")
+    login(client, "bob", "testpass123")
+    client.post("/artists/add", data={"name": "  faccianuvola "}, follow_redirects=False)
+    assert scanned == [artist.id]  # unchanged
+
+
 def test_unfollow_persists_and_refollow_reactivates(client, db):
     _login_user(client, db)
     client.post(

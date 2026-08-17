@@ -17,6 +17,7 @@ from poghiamo.database.engine import get_db, init_db
 from poghiamo.database.models import Artist, Event, Follow, InviteToken, SavedEvent, User
 from poghiamo import geo
 from poghiamo.services import artist_search, feed
+from poghiamo.services.pipeline import scan_artist_by_id
 from poghiamo.webapp.auth import (
     RedirectToLogin,
     generate_invite_token,
@@ -307,6 +308,9 @@ def add_custom_event(
         db.add(artist)
         db.flush()
         artist_search.maybe_retry_enrichment([artist.id], background_tasks)
+        # Scan the freshly-created artist too: the custom event covers one date,
+        # the sources may know others.
+        background_tasks.add_task(scan_artist_by_id, artist.id)
     follow = (
         db.query(Follow).filter(Follow.user_id == user.id, Follow.artist_id == artist.id).first()
     )
@@ -519,6 +523,12 @@ def add_artist(
         # Instant add, async enrichment: MusicBrainz resolution happens after
         # the response, at its own 1 req/s pace (retry-tracked).
         artist_search.maybe_retry_enrichment([artist.id], background_tasks)
+        # A never-seen artist gets scanned right away (after the response), so
+        # its events show up without waiting for the periodic sweep. The sweep
+        # remains the fallback: on failure last_scanned_at stays NULL and it
+        # retries. Only new artists fire this; following a known one inherits
+        # the shared events already stored.
+        background_tasks.add_task(scan_artist_by_id, artist.id)
     elif artist.deezer_id is None and deezer_id is not None:
         artist.deezer_id = deezer_id
         if not artist.image_url and image_url:

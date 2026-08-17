@@ -32,6 +32,16 @@ def clean_db():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _no_network_scans(monkeypatch):
+    """Adding an artist now fires a background scan. Default every test to zero
+    enabled adapters so those scans never touch the network; a test that wants a
+    real scan overrides this by monkeypatching pipeline.enabled_adapters again."""
+    from poghiamo.services import pipeline
+
+    monkeypatch.setattr(pipeline, "enabled_adapters", lambda: [])
+
+
 @pytest.fixture
 def db():
     session = SessionLocal()

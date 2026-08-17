@@ -149,6 +149,34 @@ def test_rescan_backfills_and_updates_last_seen(db, artist, monkeypatch):
     assert db.query(EventSource).count() == 2
 
 
+def test_scan_artist_by_id_scans_and_commits(db, artist, monkeypatch):
+    ev = ScrapedEvent(source="dice", date=FUTURE, city="Torino", province="TO")
+    _fake_adapters(monkeypatch, {"dice": [ev]})
+
+    summary = pipeline.scan_artist_by_id(artist.id)
+    assert summary["dice"]["status"] == "ok"
+
+    db.rollback()  # drop this session's read snapshot; the scan committed its own
+    assert db.query(Event).count() == 1
+    assert db.get(Artist, artist.id).last_scanned_at is not None
+
+
+def test_scan_artist_by_id_missing_artist_returns_none(db):
+    assert pipeline.scan_artist_by_id(999999) is None
+
+
+def test_scan_artist_by_id_swallows_failure_and_keeps_last_scanned_null(db, artist, monkeypatch):
+    def boom(_db, _artist):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(pipeline, "scan_artist", boom)
+    assert pipeline.scan_artist_by_id(artist.id) is None  # error swallowed
+
+    db.rollback()
+    # Rolled back, so the periodic sweep will retry (last_scanned_at still NULL).
+    assert db.get(Artist, artist.id).last_scanned_at is None
+
+
 def test_due_selection_respects_interval_and_follows(db, artist, monkeypatch):
     user = make_user(db, username="alice")
     # Unfollowed artist is never due

@@ -87,6 +87,34 @@ def scan_artist(db, artist: Artist) -> dict:
     return summary
 
 
+def scan_artist_by_id(artist_id: int) -> dict | None:
+    """Scan one artist in a fresh DB session, committing on success.
+
+    Self-contained so the same call serves both entry points: a web
+    BackgroundTask fired the moment a brand-new artist is added, and each step of
+    the scheduler's periodic sweep. It owns its session and never lets a failure
+    escape; on error it rolls back, so last_scanned_at stays untouched and the
+    sweep picks the artist up again later. Returns the per-source summary, or None
+    if the artist is gone or the scan failed."""
+    from poghiamo.database.engine import SessionLocal
+
+    db = SessionLocal()
+    try:
+        artist = db.get(Artist, artist_id)
+        if artist is None:
+            return None
+        summary = scan_artist(db, artist)
+        db.commit()
+        logger.info(f"Scanned '{artist.name}': {summary}")
+        return summary
+    except Exception:
+        db.rollback()
+        logger.exception(f"Scan failed for artist id={artist_id}")
+        return None
+    finally:
+        db.close()
+
+
 def _maybe_cache_tm_id(db, artist, adapters):
     if artist.tm_attraction_id:
         return
