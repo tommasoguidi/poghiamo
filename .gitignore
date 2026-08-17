@@ -17,3 +17,6 @@ backups/
 # Frontend
 node_modules/
 src/poghiamo/webapp/static/tailwind.css
+
+# Local-only dev scripts (not deployed to the VPS)
+scripts/
