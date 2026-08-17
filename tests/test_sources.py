@@ -175,7 +175,18 @@ def test_rockol_parser_handles_address_segment():
     assert e.venue == "Anfiteatro Ivan Graziani"
     assert e.city == "Alghero"        # second-to-last segment, not the address
     assert e.province == "SS"          # from "Sassari"
+    assert e.province_raw == "Sassari"
     assert resolve_area(e.city, e.province)[1] == "Sardegna"
+
+
+def test_rockol_parser_keeps_raw_province_when_unresolved():
+    # "Reggio Emilia" resolves via alias now; an invented one stays raw.
+    title = "Dettagli evento 01 marzo 2026 - 'X' presso Palco - Cittanova Fantasia - Nubistan"
+    html = f'<a href="https://www.rockol.it/concerto-x-c-zzz9" title="{title}">go</a>'
+    e = parse_rockol_html(html)[0]
+    assert e.province is None            # unknown province
+    assert e.province_raw == "Nubistan"  # kept for later review/aliasing
+    assert e.city == "Cittanova Fantasia"
 
 
 def test_rockol_parser_ignores_non_event_anchors():

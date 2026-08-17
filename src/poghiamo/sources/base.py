@@ -39,6 +39,7 @@ class ScrapedEvent(BaseModel):
     venue: str | None = None
     city: str | None = None
     province: str | None = None  # sigla; may be filled by the pipeline from city
+    province_raw: str | None = None  # raw area text the source used (for review if unresolved)
     lat: float | None = None
     lon: float | None = None
     ticket_url: str | None = None

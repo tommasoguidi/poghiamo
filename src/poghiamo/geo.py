@@ -59,10 +59,29 @@ def sigla_by_province_name() -> dict[str, str]:
     return {name.casefold(): sigla for sigla, name, _ in provinces()}
 
 
+# Common spellings that differ from the ISTAT province names (scraped sources
+# use the colloquial form). Extend as new singularities show up in real data.
+_PROVINCE_ALIASES = {
+    "reggio emilia": "RE",          # ISTAT: Reggio nell'Emilia
+    "reggio calabria": "RC",        # ISTAT: Reggio di Calabria
+    "sulcis iglesiente": "SU",      # historical area -> Sud Sardegna
+    "aosta": "AO",                  # ISTAT: Valle d'Aosta/Vallée d'Aoste
+    "monza e brianza": "MB",        # ISTAT: Monza e della Brianza
+    "massa carrara": "MS",          # ISTAT: Massa-Carrara
+    "pesaro urbino": "PU",          # ISTAT: Pesaro e Urbino
+    "forli cesena": "FC",
+    "forlì cesena": "FC",
+    "bolzano": "BZ",
+    "bozen": "BZ",
+    "barletta andria trani": "BT",
+}
+
+
 def province_name_to_sigla(name: str | None) -> str | None:
     if not name:
         return None
-    return sigla_by_province_name().get(name.strip().casefold())
+    key = name.strip().casefold()
+    return sigla_by_province_name().get(key) or _PROVINCE_ALIASES.get(key)
 
 
 @lru_cache(maxsize=1)

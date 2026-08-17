@@ -72,7 +72,7 @@ def parse_rockol_html(html: str) -> list[ScrapedEvent]:
             continue
         seen.add(pid)
 
-        venue, city, province = _venue_city(title)
+        venue, city, province, province_raw = _venue_city(title)
         events.append(
             ScrapedEvent(
                 source="rockol",
@@ -80,6 +80,7 @@ def parse_rockol_html(html: str) -> list[ScrapedEvent]:
                 date=date,
                 city=city,
                 province=province,  # resolved from the province NAME (last title segment)
+                province_raw=province_raw,
                 venue=venue,
                 ticket_url=_abs(href_m.group(1)),
                 title=title.strip(),
@@ -101,28 +102,30 @@ def _parse_date(title: str) -> dt.date | None:
         return None
 
 
-def _venue_city(title: str) -> tuple[str | None, str | None, str | None]:
+def _venue_city(title: str) -> tuple[str | None, str | None, str | None, str | None]:
     # After "presso": "venue - [address -] city - province". The last segment is
     # the province NAME (a reliable signal); the city is the segment before it;
-    # the venue is the first. Returns (venue, city, province_sigla).
+    # the venue is the first. Returns (venue, city, province_sigla, province_raw).
     from poghiamo import geo
 
     m = _VENUE_CITY.search(title)
     if not m:
-        return None, None, None
+        return None, None, None, None
     segs = [s.strip() for s in m.group(1).split(" - ") if s.strip()]
     if not segs:
-        return None, None, None
+        return None, None, None, None
     venue = segs[0]
-    sigla = geo.province_name_to_sigla(segs[-1]) if len(segs) >= 2 else None
+    raw = segs[-1] if len(segs) >= 2 else None  # the province name as written
+    sigla = geo.province_name_to_sigla(raw)
     if sigla:
         # last = province; city is the segment before it (or the province name
         # itself when the title is just "venue - province", e.g. "Arena - Verona").
         city = segs[-2] if len(segs) >= 3 else segs[-1]
-        return venue, city, sigla
-    # No recognized province: best-effort city is the last segment.
-    city = segs[-1] if len(segs) >= 2 else None
-    return venue, city, None
+        return venue, city, sigla, raw
+    # Province name did not resolve: keep the real city (second-to-last when
+    # there is an address/province tail) and hand the raw province name upward.
+    city = segs[-2] if len(segs) >= 3 else (segs[-1] if len(segs) >= 2 else None)
+    return venue, city, None, raw
 
 
 class RockolAdapter(SourceAdapter):

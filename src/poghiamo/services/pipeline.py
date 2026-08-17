@@ -103,9 +103,12 @@ def _maybe_cache_tm_id(db, artist, adapters):
 
 
 def _upsert_events(db, artist: Artist, scraped: list) -> None:
-    """Collapse scraped events onto canonical Events (dedup key artist+date+city)
-    and record one EventSource per source. Only future events are stored; past
-    dates are ignored at ingestion."""
+    """Collapse scraped events onto canonical Events and record one EventSource
+    per source. Dedup key is (artist, date): the same artist almost never plays
+    two different cities on one day, so this merges the same gig reported by
+    several sources even when the city spelling differs. On merge we prefer a
+    source that actually resolves a region over one that doesn't. Only future
+    events are stored; past dates are ignored at ingestion."""
     today = dt.date.today()
     now = dt.datetime.now(dt.timezone.utc)
 
@@ -115,13 +118,11 @@ def _upsert_events(db, artist: Artist, scraped: list) -> None:
         city_norm = normalize_city(ev.city)
         province, region = resolve_area(ev.city, ev.province)
 
-        event = db.execute(
-            select(Event).where(
-                Event.artist_id == artist.id,
-                Event.date == ev.date,
-                Event.city_normalized == city_norm,
-            )
-        ).scalar_one_or_none()
+        event = (
+            db.execute(select(Event).where(Event.artist_id == artist.id, Event.date == ev.date))
+            .scalars()
+            .first()
+        )
 
         if event is None:
             event = Event(
@@ -133,6 +134,7 @@ def _upsert_events(db, artist: Artist, scraped: list) -> None:
                 city_normalized=city_norm,
                 province=province,
                 region=region,
+                province_raw=ev.province_raw,
                 lat=ev.lat,
                 lon=ev.lon,
                 title=ev.title,
@@ -143,13 +145,21 @@ def _upsert_events(db, artist: Artist, scraped: list) -> None:
             db.flush()
         else:
             event.last_seen_at = now
-            # Backfill fields a later, richer source provides.
+            if event.region is None and region is not None:
+                # This source places the event better: adopt its location.
+                event.city = ev.city or event.city
+                event.city_normalized = city_norm or event.city_normalized
+                event.province = province
+                event.region = region
+            else:
+                event.province = event.province or province
+                event.region = event.region or region
+            # Backfill the rest from whichever source has it.
             event.venue = event.venue or ev.venue
-            event.province = event.province or province
-            event.region = event.region or region
             event.lat = event.lat if event.lat is not None else ev.lat
             event.lon = event.lon if event.lon is not None else ev.lon
             event.time = event.time or ev.time
+            event.province_raw = event.province_raw or ev.province_raw
 
         src = db.execute(
             select(EventSource).where(

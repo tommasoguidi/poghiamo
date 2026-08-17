@@ -66,6 +66,13 @@ def _run_migrations():
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE artists ADD COLUMN last_scanned_at DATETIME"))
 
+    # Migration 3 (phase 4.5): province_raw on events, to keep unmatched area text.
+    if "events" in inspector.get_table_names():
+        columns = [c["name"] for c in inspector.get_columns("events")]
+        if "province_raw" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE events ADD COLUMN province_raw VARCHAR"))
+
 
 def seed_admin():
     """Bootstrap the admin account from ADMIN_USERNAME / ADMIN_PASSWORD.

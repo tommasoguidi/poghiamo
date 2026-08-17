@@ -163,6 +163,9 @@ class Event(Base):
     city_normalized = Column(String, nullable=False, default="")
     province = Column(String, nullable=True)  # sigla, e.g. "MI"
     region = Column(String, nullable=True)
+    # Raw area text as the source spelled it, kept even when it did not resolve
+    # to a province, so unmatched values can be reviewed and aliased later.
+    province_raw = Column(String, nullable=True)
     lat = Column(Float, nullable=True)
     lon = Column(Float, nullable=True)
     title = Column(String, nullable=True)

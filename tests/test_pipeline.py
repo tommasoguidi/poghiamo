@@ -61,6 +61,23 @@ def test_dedup_across_sources(db, artist, monkeypatch):
     assert {s.ticket_url for s in event.sources} == {"https://tsms/A", "https://dice/B"}
 
 
+def test_dedup_merges_different_cities_prefers_resolved(db, artist, monkeypatch):
+    # Same artist+date from two sources, different city; the one that resolves a
+    # region wins, and both source links are kept.
+    rockol = ScrapedEvent(source="rockol", date=FUTURE, city="Nubistan", province_raw="Nubistan")
+    tsms = ScrapedEvent(source="ticketsms", date=FUTURE, city="Milano", province="MI")
+    _fake_adapters(monkeypatch, {"rockol": [rockol], "ticketsms": [tsms]})
+
+    pipeline.scan_artist(db, artist)
+    db.commit()
+
+    assert db.query(Event).count() == 1
+    e = db.query(Event).one()
+    assert e.city == "Milano" and e.region == "Lombardia"  # resolved source wins
+    assert e.province_raw == "Nubistan"  # unmatched raw text retained for review
+    assert {s.source for s in e.sources} == {"rockol", "ticketsms"}
+
+
 def test_past_events_are_not_stored(db, artist, monkeypatch):
     _fake_adapters(monkeypatch, {
         "dice": [ScrapedEvent(source="dice", date=PAST, city="Roma")],
