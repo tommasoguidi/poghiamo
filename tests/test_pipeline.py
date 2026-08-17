@@ -100,6 +100,30 @@ def test_dedup_rockol_and_ticketmaster_same_gig(db, artist, monkeypatch):
     assert {s.ticket_url for s in e.sources} == {"https://rockol/r1", "https://tm/t1"}
 
 
+def test_one_source_two_events_same_date_does_not_crash(db, artist, monkeypatch):
+    # Real Rares case: DICE sells one festival as two ticket products, so it
+    # returns two events on the same (artist, date). With autoflush off, the
+    # in-loop EventSource dedup must collapse them instead of inserting a
+    # duplicate and tripping UNIQUE(event_id, source), which used to roll back
+    # the artist's whole scan. rockol reports the same date once.
+    dice_pass = ScrapedEvent(source="dice", source_event_id="d-pass", date=FUTURE, city="Piacenza",
+                             venue="Palazzo Farnese", ticket_url="https://dice/pass")
+    dice_day1 = ScrapedEvent(source="dice", source_event_id="d-day1", date=FUTURE, city="Piacenza",
+                             venue="Palazzo Farnese", ticket_url="https://dice/day1")
+    rockol = ScrapedEvent(source="rockol", source_event_id="r1", date=FUTURE, city="Piacenza",
+                          province="PC", ticket_url="https://rockol/r1")
+    _fake_adapters(monkeypatch, {"dice": [dice_pass, dice_day1], "rockol": [rockol]})
+
+    pipeline.scan_artist(db, artist)
+    db.commit()  # would raise IntegrityError before the fix
+
+    assert db.query(Event).count() == 1
+    e = db.query(Event).one()
+    # DICE collapses to a single source row; rockol adds its own.
+    assert sorted(s.source for s in e.sources) == ["dice", "rockol"]
+    assert db.query(EventSource).filter(EventSource.source == "dice").count() == 1
+
+
 def test_past_events_are_not_stored(db, artist, monkeypatch):
     _fake_adapters(monkeypatch, {
         "dice": [ScrapedEvent(source="dice", date=PAST, city="Roma")],

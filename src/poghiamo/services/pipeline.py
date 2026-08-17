@@ -139,6 +139,14 @@ def _upsert_events(db, artist: Artist, scraped: list) -> None:
     events are stored; past dates are ignored at ingestion."""
     today = dt.date.today()
     now = dt.datetime.now(dt.timezone.utc)
+    # EventSource rows touched in THIS call, keyed by (event_id, source). The
+    # session has autoflush off, so a plain SELECT would not see a sibling
+    # EventSource added earlier in this same loop. Without this, a source that
+    # returns two events on one (artist, date) inserts a duplicate and trips the
+    # UNIQUE(event_id, source) constraint, failing (and rolling back) the whole
+    # scan for that artist. Seen live: DICE sells one festival as two ticket
+    # products, so it returns two same-date events for the artist.
+    touched: dict[tuple[int, str], EventSource] = {}
 
     for ev in scraped:
         if ev.date < today:
@@ -189,25 +197,28 @@ def _upsert_events(db, artist: Artist, scraped: list) -> None:
             event.time = event.time or ev.time
             event.province_raw = event.province_raw or ev.province_raw
 
-        src = db.execute(
-            select(EventSource).where(
-                EventSource.event_id == event.id, EventSource.source == ev.source
-            )
-        ).scalar_one_or_none()
+        key = (event.id, ev.source)
+        src = touched.get(key)
         if src is None:
-            db.add(
-                EventSource(
-                    event_id=event.id,
-                    source=ev.source,
-                    source_event_id=ev.source_event_id,
-                    ticket_url=ev.ticket_url,
-                    first_seen_at=now,
-                    last_seen_at=now,
+            src = db.execute(
+                select(EventSource).where(
+                    EventSource.event_id == event.id, EventSource.source == ev.source
                 )
+            ).scalar_one_or_none()
+        if src is None:
+            src = EventSource(
+                event_id=event.id,
+                source=ev.source,
+                source_event_id=ev.source_event_id,
+                ticket_url=ev.ticket_url,
+                first_seen_at=now,
+                last_seen_at=now,
             )
+            db.add(src)
         else:
             src.last_seen_at = now
             src.ticket_url = ev.ticket_url or src.ticket_url
+        touched[key] = src
 
 
 def artists_due_for_scan(db, interval_days: int, limit: int) -> list[Artist]:
