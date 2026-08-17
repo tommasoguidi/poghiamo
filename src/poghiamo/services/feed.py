@@ -51,13 +51,17 @@ def _load(db, whereclause, order):
     )
 
 
-def annotate(events, *, last_seen, saved_ids):
+def annotate(events, *, last_seen, saved_ids, user=None):
     """Attach transient display flags used by the templates."""
     stale_before = now_utc_naive() - dt.timedelta(days=EVENT_STALE_DAYS)
+    uid = getattr(user, "id", None)
+    is_admin = getattr(user, "is_admin", False)
     for e in events:
         e.is_new = last_seen is None or (e.first_seen_at is not None and e.first_seen_at > last_seen)
         e.is_stale = e.last_seen_at is not None and e.last_seen_at < stale_before
         e.is_saved = e.id in saved_ids
+        e.is_custom = e.added_by_user_id is not None
+        e.can_delete = e.is_custom and (is_admin or e.added_by_user_id == uid)
     return events
 
 
@@ -72,6 +76,19 @@ def feed_events(db, user, all_italy: bool = False):
             e for e in events if geo.area_matches(user.regions, user.provinces, e.region, e.province)
         ]
     return events
+
+
+def feed_split(db, user):
+    """Upcoming events for followed artists, split into (in the user's areas,
+    elsewhere). Assumes the user has at least one area set."""
+    events = feed_events(db, user, all_italy=True)
+    in_zona, altre = [], []
+    for e in events:
+        if geo.area_matches(user.regions, user.provinces, e.region, e.province):
+            in_zona.append(e)
+        else:
+            altre.append(e)
+    return in_zona, altre
 
 
 def calendar_events(db, user):

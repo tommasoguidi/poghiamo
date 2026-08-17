@@ -72,6 +72,12 @@ def _run_migrations():
         if "province_raw" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE events ADD COLUMN province_raw VARCHAR"))
+        # Migration 4 (phase 4.5): custom (user-added) events.
+        if "added_by_user_id" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE events ADD COLUMN added_by_user_id INTEGER REFERENCES users(id)")
+                )
 
 
 def seed_admin():

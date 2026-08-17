@@ -169,6 +169,9 @@ class Event(Base):
     lat = Column(Float, nullable=True)
     lon = Column(Float, nullable=True)
     title = Column(String, nullable=True)
+    # Set when a user added this gig by hand (a "custom" event, shared with
+    # co-followers); NULL for scraped events. Identifies who may edit/delete it.
+    added_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     first_seen_at = Column(DateTime, default=func.now())
     last_seen_at = Column(DateTime, default=func.now())
 

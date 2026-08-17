@@ -23,7 +23,8 @@ def test_login_success_sets_session(client, db):
     make_user(db, username="alice", password="testpass123")
     resp = login(client, "alice", "testpass123")
     assert resp.status_code == 303
-    assert client.get("/", follow_redirects=False).status_code == 200
+    # An authenticated page (needs no area preference) confirms the session.
+    assert client.get("/settings", follow_redirects=False).status_code == 200
 
 
 def test_login_wrong_password(client, db):
@@ -44,8 +45,8 @@ def test_signup_with_valid_invite(client, db):
     assert user is not None
     db.refresh(invite)
     assert invite.used_by == user.id
-    # Session is live right away
-    assert client.get("/", follow_redirects=False).status_code == 200
+    # Session is live right away (settings needs no area preference)
+    assert client.get("/settings", follow_redirects=False).status_code == 200
 
 
 def test_signup_invalid_invite(client, db):

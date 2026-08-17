@@ -211,19 +211,22 @@ def index(
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
-    tutta: int = 0,
 ):
-    all_italy = bool(tutta)
-    events = feed.feed_events(db, user, all_italy=all_italy)
-    feed.annotate(events, last_seen=user.last_seen_events_at, saved_ids=feed.saved_event_ids(db, user))
-    has_areas = bool(user.regions or user.provinces)
+    # "In zona" needs an area to be meaningful: nudge to settings when unset.
+    if not (user.regions or user.provinces):
+        return RedirectResponse("/settings?hint=zone", status_code=303)
+
+    in_zona, altre = feed.feed_split(db, user)
+    saved_ids = feed.saved_event_ids(db, user)
+    feed.annotate(in_zona, last_seen=user.last_seen_events_at, saved_ids=saved_ids, user=user)
+    feed.annotate(altre, last_seen=user.last_seen_events_at, saved_ids=saved_ids, user=user)
     # Mark this visit AFTER computing "new since last visit".
     user.last_seen_events_at = feed.now_utc_naive()
     db.commit()
     return templates.TemplateResponse(
         request=request,
         name="feed.html",
-        context={"user": user, "events": events, "all_italy": all_italy, "has_areas": has_areas},
+        context={"user": user, "in_zona": in_zona, "altre": altre},
     )
 
 
@@ -232,20 +235,110 @@ def calendario(
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
+    error: str = None,
 ):
     upcoming, past = feed.calendar_events(db, user)
     saved_ids = feed.saved_event_ids(db, user)
-    feed.annotate(upcoming, last_seen=user.last_seen_events_at, saved_ids=saved_ids)
-    feed.annotate(past, last_seen=user.last_seen_events_at, saved_ids=saved_ids)
+    feed.annotate(upcoming, last_seen=user.last_seen_events_at, saved_ids=saved_ids, user=user)
+    feed.annotate(past, last_seen=user.last_seen_events_at, saved_ids=saved_ids, user=user)
     return templates.TemplateResponse(
         request=request,
         name="calendario.html",
         context={
             "user": user,
+            "error": error,
             "upcoming_groups": feed.group_by_month(upcoming),
             "past_groups": feed.group_by_month(past),
         },
     )
+
+
+@app.post("/calendario/add")
+def add_custom_event(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    artist_name: str = Form(...),
+    date: str = Form(...),
+    city: str = Form(None),
+    venue: str = Form(None),
+):
+    from datetime import date as _date
+
+    artist_name = artist_name.strip()
+    try:
+        when = _date.fromisoformat(date)
+    except ValueError:
+        return RedirectResponse("/calendario?error=Data+non+valida", status_code=303)
+    if not artist_name:
+        return RedirectResponse("/calendario?error=Manca+l'artista", status_code=303)
+
+    # Find or create the artist, and follow it (reuse the manual-add path's rules).
+    normalized = artist_search.normalize_name(artist_name)
+    artist = db.query(Artist).filter(Artist.name_normalized == normalized).first()
+    if artist is None:
+        artist = Artist(name=artist_name, name_normalized=normalized)
+        db.add(artist)
+        db.flush()
+        artist_search.maybe_retry_enrichment([artist.id], background_tasks)
+    follow = (
+        db.query(Follow).filter(Follow.user_id == user.id, Follow.artist_id == artist.id).first()
+    )
+    if follow is None:
+        db.add(Follow(user_id=user.id, artist_id=artist.id, source="manual"))
+    elif follow.state != "active":
+        follow.state = "active"
+        follow.removed_at = None
+
+    # Reuse an existing event for that (artist, date), else create a custom one.
+    event = (
+        db.query(Event).filter(Event.artist_id == artist.id, Event.date == when).first()
+    )
+    if event is None:
+        from poghiamo.sources.base import normalize_city, resolve_area
+
+        province, region = resolve_area((city or "").strip() or None, None)
+        event = Event(
+            artist_id=artist.id,
+            date=when,
+            city=(city or "").strip() or None,
+            city_normalized=normalize_city(city),
+            province=province,
+            region=region,
+            venue=(venue or "").strip() or None,
+            title=f"{artist.name} live",
+            added_by_user_id=user.id,
+        )
+        db.add(event)
+        db.flush()
+
+    # Save it for the creator (co-followers see the shared event on their own feed).
+    if (
+        db.query(SavedEvent)
+        .filter(SavedEvent.user_id == user.id, SavedEvent.event_id == event.id)
+        .first()
+        is None
+    ):
+        db.add(SavedEvent(user_id=user.id, event_id=event.id))
+    db.commit()
+    return RedirectResponse("/calendario", status_code=303)
+
+
+@app.post("/events/{event_id}/custom-delete")
+def delete_custom_event(
+    event_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    event = db.get(Event, event_id)
+    # Only a custom event, and only its creator or an admin, may be deleted.
+    if event and event.added_by_user_id is not None and (
+        user.is_admin or event.added_by_user_id == user.id
+    ):
+        db.query(SavedEvent).filter(SavedEvent.event_id == event_id).delete()
+        db.delete(event)
+        db.commit()
+    return RedirectResponse("/calendario", status_code=303)
 
 
 @app.post("/events/{event_id}/save")
@@ -298,17 +391,19 @@ def artists_page(
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
+    sort: str = "name",
 ):
-    follows = (
+    q = (
         db.query(Follow)
         .options(joinedload(Follow.artist))
         .join(Artist, Follow.artist_id == Artist.id)
         .filter(Follow.user_id == user.id, Follow.state == "active")
-        .order_by(Artist.name_normalized)
-        .all()
     )
+    q = q.order_by(Follow.created_at.desc()) if sort == "recent" else q.order_by(Artist.name_normalized)
     return templates.TemplateResponse(
-        request=request, name="artists.html", context={"user": user, "follows": follows}
+        request=request,
+        name="artists.html",
+        context={"user": user, "follows": q.all(), "sort": sort},
     )
 
 
@@ -442,7 +537,7 @@ def artist_detail(
     if artist is None:
         return RedirectResponse("/artists", status_code=303)
     events = feed.artist_events(db, artist_id)
-    feed.annotate(events, last_seen=user.last_seen_events_at, saved_ids=feed.saved_event_ids(db, user))
+    feed.annotate(events, last_seen=user.last_seen_events_at, saved_ids=feed.saved_event_ids(db, user), user=user)
     following = (
         db.query(Follow)
         .filter(Follow.user_id == user.id, Follow.artist_id == artist_id, Follow.state == "active")
@@ -473,6 +568,7 @@ def settings_page(
     user: User = Depends(require_user),
     error: str = None,
     saved: str = None,
+    hint: str = None,
 ):
     invite_tokens = []
     if user.is_admin:
@@ -491,6 +587,7 @@ def settings_page(
             "invite_tokens": invite_tokens,
             "error": error,
             "saved": saved,
+            "hint": hint,
             # Flat searchable list for the area picker: regions first, then provinces.
             "areas": (
                 [{"type": "region", "value": r, "label": r, "region": r} for r in geo.regions()]

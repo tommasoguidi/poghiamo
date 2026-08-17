@@ -13,6 +13,7 @@
             <a href="/artists/{{ e.artist.id }}" class="text-cream font-semibold hover:text-primary transition-colors">{{ e.artist.name }}</a>
             {% if e.is_new %}<span class="text-[10px] uppercase tracking-wide bg-primary/15 text-rose-300 px-1.5 py-0.5 rounded">nuovo</span>{% endif %}
             {% if e.is_stale %}<span class="text-[10px] uppercase tracking-wide bg-amber-500/15 text-amber-300 px-1.5 py-0.5 rounded" title="Non più vista dalle fonti di recente">da ricontrollare</span>{% endif %}
+            {% if e.is_custom %}<span class="text-[10px] uppercase tracking-wide bg-zinc-700/40 text-zinc-300 px-1.5 py-0.5 rounded" title="Inserito da un utente">aggiunto a mano</span>{% endif %}
         </div>
         <div class="text-sm text-cream mt-0.5">{{ e.date | it_date }}{% if e.time %} · {{ "%02d:%02d"|format(e.time.hour, e.time.minute) }}{% endif %}</div>
         <div class="text-sm text-zinc-400 truncate">
@@ -31,7 +32,7 @@
         </div>
     </div>
 
-    <div class="shrink-0 self-start">
+    <div class="shrink-0 self-start flex flex-col items-center gap-2">
         {% if e.is_saved %}
         <form action="/events/{{ e.id }}/unsave" method="POST">
             <button type="submit" title="Rimuovi dal calendario" class="text-primary hover:text-rose-400 transition-colors text-lg">★</button>
@@ -39,6 +40,11 @@
         {% else %}
         <form action="/events/{{ e.id }}/save" method="POST">
             <button type="submit" title="Salva nel calendario" class="text-zinc-500 hover:text-primary transition-colors text-lg">☆</button>
+        </form>
+        {% endif %}
+        {% if e.can_delete %}
+        <form action="/events/{{ e.id }}/custom-delete" method="POST" onsubmit="return confirm('Eliminare questo concerto aggiunto a mano?');">
+            <button type="submit" title="Elimina" class="text-zinc-600 hover:text-red-400 transition-colors text-xs">🗑</button>
         </form>
         {% endif %}
     </div>
