@@ -30,14 +30,6 @@
         </div>
     </div>
 
-    <div class="flex items-center gap-2 flex-wrap">
-        {% for name, has in handles.items() %}
-        <span class="text-[11px] px-2 py-1 rounded-full border {{ 'border-emerald-700/50 text-emerald-300' if has else 'border-zinc-800 text-zinc-600' }}">
-            {{ name }}{{ ' ✓' if has else '' }}
-        </span>
-        {% endfor %}
-    </div>
-
     <div>
         <h2 class="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-3">Prossime date</h2>
         {% if events %}

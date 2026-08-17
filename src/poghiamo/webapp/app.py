@@ -586,17 +586,10 @@ def artist_detail(
         .first()
         is not None
     )
-    # Which sources have a handle for this artist (coverage at a glance).
-    handles = {
-        "TicketSms": bool(artist.ticketsms_slug),
-        "DICE": bool(artist.dice_slug),
-        "Ticketmaster": bool(artist.tm_attraction_id),
-        "rockol": bool(artist.rockol_id),
-    }
     return templates.TemplateResponse(
         request=request,
         name="artist_detail.html",
-        context={"user": user, "artist": artist, "events": events, "following": following, "handles": handles},
+        context={"user": user, "artist": artist, "events": events, "following": following},
     )
 
 
