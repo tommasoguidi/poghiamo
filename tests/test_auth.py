@@ -88,7 +88,7 @@ def test_signup_short_password(client, db):
     admin = make_user(db, username="admin", is_admin=True)
     invite = make_invite(db, creator=admin)
     resp = signup(client, invite_code=invite.token, password="short")
-    assert "almeno 8 caratteri" in resp.text
+    assert "almeno 6 caratteri" in resp.text
 
 
 def test_signup_taken_username(client, db):

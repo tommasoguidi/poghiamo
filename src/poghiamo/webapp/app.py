@@ -174,8 +174,8 @@ def signup(
     if password != confirm_password:
         ctx["error"] = "Le password non coincidono"
         return templates.TemplateResponse(request=request, name="signup.html", context=ctx)
-    if len(password) < 8:
-        ctx["error"] = "La password deve avere almeno 8 caratteri"
+    if len(password) < 6:
+        ctx["error"] = "La password deve avere almeno 6 caratteri"
         return templates.TemplateResponse(request=request, name="signup.html", context=ctx)
     if len(password.encode("utf-8")) > 72:
         # bcrypt silently ignores bytes past 72: reject instead of pretending.
