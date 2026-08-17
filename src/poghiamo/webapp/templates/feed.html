@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto px-6 py-12 space-y-6">
+    <div class="flex items-center justify-between gap-4">
+        <h1 class="text-2xl font-bold text-cream">Concerti</h1>
+        {% if has_areas %}
+        <a href="{{ '/' if all_italy else '/?tutta=1' }}"
+           class="text-xs font-medium px-3 py-1.5 rounded-full border transition-colors
+                  {{ 'border-primary/40 bg-primary/10 text-rose-300' if all_italy else 'border-zinc-700 text-zinc-400 hover:text-cream' }}">
+            {{ 'tutta Italia ✓' if all_italy else 'mostra tutta Italia' }}
+        </a>
+        {% endif %}
+    </div>
+
+    {% if not has_areas %}
+    <p class="text-xs text-zinc-500">
+        Nessuna zona selezionata: stai vedendo tutta Italia.
+        <a href="/settings" class="text-primary hover:underline">Scegli le tue zone</a>.
+    </p>
+    {% endif %}
+
+    {% if events %}
+    <ul class="space-y-3">
+        {% for e in events %}
+        {% include "_event_card.html" %}
+        {% endfor %}
+    </ul>
+    {% else %}
+    <div class="text-center py-16 text-zinc-500 text-sm">
+        {% if all_italy or not has_areas %}
+        Nessun concerto in programma per gli artisti che segui.
+        {% else %}
+        Nessun concerto nelle tue zone. Prova <a href="/?tutta=1" class="text-primary hover:underline">tutta Italia</a>.
+        {% endif %}
+        <div class="mt-2">Aggiungine dalla sezione <a href="/artists" class="text-primary hover:underline">Artisti</a>.</div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

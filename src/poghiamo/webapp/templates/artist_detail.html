@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto px-6 py-12 space-y-6">
+    <a href="/artists" class="text-xs text-zinc-500 hover:text-cream">← Artisti</a>
+
+    <div class="flex items-center gap-4">
+        {% if artist.image_url %}
+        <img src="{{ artist.image_url }}" alt="" class="w-16 h-16 rounded-2xl object-cover bg-zinc-800">
+        {% else %}
+        <div class="w-16 h-16 rounded-2xl bg-zinc-800 flex items-center justify-center text-zinc-400 text-xl font-bold">{{ artist.name[0]|upper }}</div>
+        {% endif %}
+        <div class="min-w-0">
+            <h1 class="text-2xl font-bold text-cream truncate">{{ artist.name }}</h1>
+            <div class="text-sm text-zinc-500">
+                {% if artist.country %}{{ artist.country }} · {% endif %}
+                {% if following %}<span class="text-emerald-400">segui</span>{% else %}non segui{% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="flex items-center gap-2 flex-wrap">
+        {% for name, has in handles.items() %}
+        <span class="text-[11px] px-2 py-1 rounded-full border {{ 'border-emerald-700/50 text-emerald-300' if has else 'border-zinc-800 text-zinc-600' }}">
+            {{ name }}{{ ' ✓' if has else '' }}
+        </span>
+        {% endfor %}
+    </div>
+
+    <div>
+        <h2 class="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-3">Prossime date</h2>
+        {% if events %}
+        <ul class="space-y-3">
+            {% for e in events %}{% include "_event_card.html" %}{% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-sm text-zinc-500 py-6">Nessuna data in programma trovata dalle fonti.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -202,3 +202,19 @@ class ScanLog(Base):
     found = Column(Integer, default=0)
     message = Column(String, nullable=True)
     ran_at = Column(DateTime, default=func.now(), index=True)
+
+
+class SavedEvent(Base):
+    """A user's bookmark of an Event, shown in the Calendario section.
+
+    Saved events must survive any future event pruning (a user planned around
+    them). Deleting a user drops their bookmarks; deleting an event cascades.
+    """
+
+    __tablename__ = "saved_events"
+    __table_args__ = (UniqueConstraint("user_id", "event_id", name="uq_saved_user_event"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    event_id = Column(Integer, ForeignKey("events.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=func.now())

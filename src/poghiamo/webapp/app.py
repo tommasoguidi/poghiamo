@@ -14,9 +14,9 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from poghiamo.config import SECRET_KEY, SESSION_HTTPS_ONLY, WEBAPP_URL
 from poghiamo.database.engine import get_db, init_db
-from poghiamo.database.models import Artist, Follow, InviteToken, User
+from poghiamo.database.models import Artist, Event, Follow, InviteToken, SavedEvent, User
 from poghiamo import geo
-from poghiamo.services import artist_search
+from poghiamo.services import artist_search, feed
 from poghiamo.webapp.auth import (
     RedirectToLogin,
     generate_invite_token,
@@ -63,6 +63,23 @@ templates.env.globals.update(
     tailwind_dev=not _tailwind_css.exists(),
     webapp_url=WEBAPP_URL,
 )
+
+_IT_MONTHS = [
+    "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+    "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
+]
+
+
+def _it_date(d):
+    return f"{d.day} {_IT_MONTHS[d.month - 1]} {d.year}" if d else ""
+
+
+def _it_month(d):
+    return f"{_IT_MONTHS[d.month - 1].capitalize()} {d.year}" if d else ""
+
+
+templates.env.filters["it_date"] = _it_date
+templates.env.filters["it_month"] = _it_month
 
 
 @app.exception_handler(RedirectToLogin)
@@ -190,10 +207,79 @@ def logout(request: Request):
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request, user: User = Depends(require_user)):
+def index(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    tutta: int = 0,
+):
+    all_italy = bool(tutta)
+    events = feed.feed_events(db, user, all_italy=all_italy)
+    feed.annotate(events, last_seen=user.last_seen_events_at, saved_ids=feed.saved_event_ids(db, user))
+    has_areas = bool(user.regions or user.provinces)
+    # Mark this visit AFTER computing "new since last visit".
+    user.last_seen_events_at = feed.now_utc_naive()
+    db.commit()
     return templates.TemplateResponse(
-        request=request, name="index.html", context={"user": user}
+        request=request,
+        name="feed.html",
+        context={"user": user, "events": events, "all_italy": all_italy, "has_areas": has_areas},
     )
+
+
+@app.get("/calendario", response_class=HTMLResponse)
+def calendario(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    upcoming, past = feed.calendar_events(db, user)
+    saved_ids = feed.saved_event_ids(db, user)
+    feed.annotate(upcoming, last_seen=user.last_seen_events_at, saved_ids=saved_ids)
+    feed.annotate(past, last_seen=user.last_seen_events_at, saved_ids=saved_ids)
+    return templates.TemplateResponse(
+        request=request,
+        name="calendario.html",
+        context={
+            "user": user,
+            "upcoming_groups": feed.group_by_month(upcoming),
+            "past_groups": feed.group_by_month(past),
+        },
+    )
+
+
+@app.post("/events/{event_id}/save")
+def save_event(
+    event_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    event = db.get(Event, event_id)
+    if event is not None:
+        exists = (
+            db.query(SavedEvent)
+            .filter(SavedEvent.user_id == user.id, SavedEvent.event_id == event_id)
+            .first()
+        )
+        if exists is None:
+            db.add(SavedEvent(user_id=user.id, event_id=event_id))
+            db.commit()
+    return RedirectResponse(request.headers.get("referer") or "/", status_code=303)
+
+
+@app.post("/events/{event_id}/unsave")
+def unsave_event(
+    event_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    db.query(SavedEvent).filter(
+        SavedEvent.user_id == user.id, SavedEvent.event_id == event_id
+    ).delete()
+    db.commit()
+    return RedirectResponse(request.headers.get("referer") or "/", status_code=303)
 
 
 @app.get("/privacy", response_class=HTMLResponse)
@@ -343,6 +429,38 @@ def unfollow_artist(
         follow.removed_at = datetime.now(timezone.utc)
         db.commit()
     return RedirectResponse("/artists", status_code=303)
+
+
+@app.get("/artists/{artist_id}", response_class=HTMLResponse)
+def artist_detail(
+    artist_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    artist = db.get(Artist, artist_id)
+    if artist is None:
+        return RedirectResponse("/artists", status_code=303)
+    events = feed.artist_events(db, artist_id)
+    feed.annotate(events, last_seen=user.last_seen_events_at, saved_ids=feed.saved_event_ids(db, user))
+    following = (
+        db.query(Follow)
+        .filter(Follow.user_id == user.id, Follow.artist_id == artist_id, Follow.state == "active")
+        .first()
+        is not None
+    )
+    # Which sources have a handle for this artist (coverage at a glance).
+    handles = {
+        "TicketSms": bool(artist.ticketsms_slug),
+        "DICE": bool(artist.dice_slug),
+        "Ticketmaster": bool(artist.tm_attraction_id),
+        "rockol": bool(artist.rockol_id),
+    }
+    return templates.TemplateResponse(
+        request=request,
+        name="artist_detail.html",
+        context={"user": user, "artist": artist, "events": events, "following": following, "handles": handles},
+    )
 
 
 # --- SETTINGS ---

@@ -37,7 +37,7 @@
                 </div>
                 {% endif %}
                 <div class="min-w-0">
-                    <div class="text-cream font-medium truncate">{{ f.artist.name }}</div>
+                    <a href="/artists/{{ f.artist.id }}" class="text-cream font-medium truncate hover:text-primary transition-colors block">{{ f.artist.name }}</a>
                     <div class="text-xs text-zinc-500" data-artist-id="{{ f.artist.id }}"
                          data-status="{{ f.artist.resolution_status }}">
                         {% if f.artist.resolution_status == 'pending' %}identificazione in corso…

@@ -1,0 +1,45 @@
+{# Reusable event card. Expects `e` (an Event with transient is_new/is_stale/is_saved). #}
+<li class="bg-card border border-zinc-800 rounded-2xl p-4 flex gap-4">
+    {% if e.artist.image_url %}
+    <img src="{{ e.artist.image_url }}" alt="" class="w-14 h-14 rounded-xl object-cover bg-zinc-800 shrink-0">
+    {% else %}
+    <div class="w-14 h-14 rounded-xl bg-zinc-800 flex items-center justify-center text-zinc-400 font-bold shrink-0">
+        {{ e.artist.name[0]|upper }}
+    </div>
+    {% endif %}
+
+    <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap">
+            <a href="/artists/{{ e.artist.id }}" class="text-cream font-semibold hover:text-primary transition-colors">{{ e.artist.name }}</a>
+            {% if e.is_new %}<span class="text-[10px] uppercase tracking-wide bg-primary/15 text-rose-300 px-1.5 py-0.5 rounded">nuovo</span>{% endif %}
+            {% if e.is_stale %}<span class="text-[10px] uppercase tracking-wide bg-amber-500/15 text-amber-300 px-1.5 py-0.5 rounded" title="Non più vista dalle fonti di recente">da ricontrollare</span>{% endif %}
+        </div>
+        <div class="text-sm text-cream mt-0.5">{{ e.date | it_date }}{% if e.time %} · {{ "%02d:%02d"|format(e.time.hour, e.time.minute) }}{% endif %}</div>
+        <div class="text-sm text-zinc-400 truncate">
+            {% if e.venue %}{{ e.venue }} · {% endif %}{{ e.city or "—" }}{% if e.region %} ({{ e.region }}){% endif %}
+        </div>
+
+        <div class="flex items-center gap-3 mt-2 flex-wrap">
+            {% for s in e.sources %}
+            {% if s.ticket_url %}
+            <a href="{{ s.ticket_url }}" target="_blank" rel="noopener noreferrer"
+               class="text-xs text-zinc-400 hover:text-primary underline underline-offset-2">{{ s.source }} ↗</a>
+            {% else %}
+            <span class="text-xs text-zinc-600">{{ s.source }}</span>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="shrink-0 self-start">
+        {% if e.is_saved %}
+        <form action="/events/{{ e.id }}/unsave" method="POST">
+            <button type="submit" title="Rimuovi dal calendario" class="text-primary hover:text-rose-400 transition-colors text-lg">★</button>
+        </form>
+        {% else %}
+        <form action="/events/{{ e.id }}/save" method="POST">
+            <button type="submit" title="Salva nel calendario" class="text-zinc-500 hover:text-primary transition-colors text-lg">☆</button>
+        </form>
+        {% endif %}
+    </div>
+</li>
