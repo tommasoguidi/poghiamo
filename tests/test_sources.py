@@ -149,19 +149,33 @@ def test_rockol_parser_extracts_and_dedupes():
     assert len(events) == 2  # deduped from 4 anchors by permalink id
 
     by_city = {e.city: e for e in events}
-    roseto = by_city["Roseto degli Abruzzi"]
+    roseto = by_city["Roseto degli Abruzzi"]  # "venue - city - province"
     assert roseto.date == dt.date(2026, 8, 22)
     assert roseto.venue == "Lungomare Trento"
+    assert roseto.province == "TE"  # resolved from the province name "Teramo"
     assert roseto.source_event_id == "9zdg4n8o4d0"
     assert roseto.ticket_url.startswith("https://www.rockol.it/concerto-")
 
-    verona = by_city["Verona"]  # no province segment in the title
+    verona = by_city["Verona"]  # "venue - province" (city == province capital)
     assert verona.date == dt.date(2026, 9, 2)
     assert verona.venue == "Arena"
+    assert verona.province == "VR"
 
-    # City names resolve to province/region via the ISTAT table
-    assert resolve_area("Roseto degli Abruzzi", None) == ("TE", "Abruzzo")
-    assert resolve_area("Verona", None) == ("VR", "Veneto")
+    # resolve_area trusts the parsed province sigla
+    assert resolve_area(roseto.city, roseto.province) == ("TE", "Abruzzo")
+
+
+def test_rockol_parser_handles_address_segment():
+    # Real variation: "presso {venue} - {address} - {city} - {province}"
+    title = "Dettagli evento 21 agosto 2026 - 'Fulminacci' presso Anfiteatro Ivan Graziani - Viale I Maggio - Alghero - Sassari"
+    html = f'<a href="https://www.rockol.it/concerto-x-c-abc123" title="{title}">go</a>'
+    events = parse_rockol_html(html)
+    assert len(events) == 1
+    e = events[0]
+    assert e.venue == "Anfiteatro Ivan Graziani"
+    assert e.city == "Alghero"        # second-to-last segment, not the address
+    assert e.province == "SS"          # from "Sassari"
+    assert resolve_area(e.city, e.province)[1] == "Sardegna"
 
 
 def test_rockol_parser_ignores_non_event_anchors():

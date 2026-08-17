@@ -53,6 +53,19 @@ def region_of_province() -> dict[str, str]:
 
 
 @lru_cache(maxsize=1)
+def sigla_by_province_name() -> dict[str, str]:
+    """normalized province name -> sigla (e.g. 'sassari' -> 'SU'? no, 'SS').
+    Used to resolve a province spelled out in scraped text."""
+    return {name.casefold(): sigla for sigla, name, _ in provinces()}
+
+
+def province_name_to_sigla(name: str | None) -> str | None:
+    if not name:
+        return None
+    return sigla_by_province_name().get(name.strip().casefold())
+
+
+@lru_cache(maxsize=1)
 def _comune_index() -> dict[str, list[str]]:
     """normalized comune name -> [sigla, ...] (names can repeat across provinces)."""
     index: dict[str, list[str]] = {}

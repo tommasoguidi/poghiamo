@@ -72,14 +72,14 @@ def parse_rockol_html(html: str) -> list[ScrapedEvent]:
             continue
         seen.add(pid)
 
-        venue, city = _venue_city(title)
+        venue, city, province = _venue_city(title)
         events.append(
             ScrapedEvent(
                 source="rockol",
                 source_event_id=pid,
                 date=date,
                 city=city,
-                province=None,  # region resolved from city downstream
+                province=province,  # resolved from the province NAME (last title segment)
                 venue=venue,
                 ticket_url=_abs(href_m.group(1)),
                 title=title.strip(),
@@ -101,17 +101,28 @@ def _parse_date(title: str) -> dt.date | None:
         return None
 
 
-def _venue_city(title: str) -> tuple[str | None, str | None]:
-    # After "presso": "venue - city[ - province]". Venue is the first segment,
-    # city the second; the trailing province (when present) is ignored since the
-    # region is resolved from the city name via the ISTAT table.
+def _venue_city(title: str) -> tuple[str | None, str | None, str | None]:
+    # After "presso": "venue - [address -] city - province". The last segment is
+    # the province NAME (a reliable signal); the city is the segment before it;
+    # the venue is the first. Returns (venue, city, province_sigla).
+    from poghiamo import geo
+
     m = _VENUE_CITY.search(title)
     if not m:
-        return None, None
+        return None, None, None
     segs = [s.strip() for s in m.group(1).split(" - ") if s.strip()]
-    venue = segs[0] if segs else None
-    city = segs[1] if len(segs) >= 2 else None
-    return venue, city
+    if not segs:
+        return None, None, None
+    venue = segs[0]
+    sigla = geo.province_name_to_sigla(segs[-1]) if len(segs) >= 2 else None
+    if sigla:
+        # last = province; city is the segment before it (or the province name
+        # itself when the title is just "venue - province", e.g. "Arena - Verona").
+        city = segs[-2] if len(segs) >= 3 else segs[-1]
+        return venue, city, sigla
+    # No recognized province: best-effort city is the last segment.
+    city = segs[-1] if len(segs) >= 2 else None
+    return venue, city, None
 
 
 class RockolAdapter(SourceAdapter):
