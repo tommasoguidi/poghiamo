@@ -6,6 +6,7 @@ from pathlib import Path
 from poghiamo.sources.base import ArtistRef, resolve_area
 from poghiamo.sources.dice import DiceAdapter
 from poghiamo.sources.rockol import parse_rockol_html
+from poghiamo.sources.ticketmaster import TicketmasterAdapter, _split_city
 from poghiamo.sources.ticketsms import TicketSmsAdapter, _slug
 
 _FIXTURES = Path(__file__).parent / "fixtures"
@@ -137,6 +138,61 @@ def test_dice_no_slug_match_returns_empty(monkeypatch):
 
     monkeypatch.setattr(dice_mod.requests, "post", lambda *a, **k: RPost())
     assert DiceAdapter().fetch(ARTIST) == []
+
+
+# --- Ticketmaster (real Discovery API shape captured 2026-08-17) ---
+
+
+def test_split_city_plain_and_parenthetical():
+    assert _split_city("Trento") == ("Trento", None)
+    assert _split_city("Segrate (Milano)") == ("Segrate", "Milano")
+    assert _split_city(None) == (None, None)
+
+
+def test_ticketmaster_splits_city_and_resolves_province(monkeypatch):
+    # Ticketmaster leaves `state` empty and folds the province into the city
+    # name; the adapter must clean the city and recover the province from it.
+    payload = {
+        "_embedded": {
+            "events": [
+                {
+                    "id": "E1",
+                    "name": "okgiorgio",
+                    "url": "https://www.ticketmaster.it/event/E1",
+                    "dates": {"start": {"localDate": "2026-09-12", "localTime": "21:00:00"}},
+                    "_embedded": {
+                        "venues": [
+                            {
+                                "name": "Circolo Magnolia",
+                                "city": {"name": "Segrate (Milano)"},
+                                "state": {},
+                                "location": {"latitude": "45.49", "longitude": "9.29"},
+                            }
+                        ]
+                    },
+                }
+            ]
+        }
+    }
+
+    class R:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return payload
+
+    import poghiamo.sources.ticketmaster as tm_mod
+
+    monkeypatch.setattr(tm_mod.requests, "get", lambda *a, **k: R())
+    events = TicketmasterAdapter().fetch(ARTIST, attraction_id="A1")
+    assert len(events) == 1
+    e = events[0]
+    assert e.source == "ticketmaster"
+    assert e.city == "Segrate"        # parenthetical stripped
+    assert e.province == "MI"         # recovered from "Milano"
+    assert e.province_raw == "Milano"
+    assert resolve_area(e.city, e.province) == ("MI", "Lombardia")
 
 
 # --- rockol (parser validated against real HTML captured via ZenRows) ---

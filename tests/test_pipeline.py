@@ -78,6 +78,28 @@ def test_dedup_merges_different_cities_prefers_resolved(db, artist, monkeypatch)
     assert {s.source for s in e.sources} == {"rockol", "ticketsms"}
 
 
+def test_dedup_rockol_and_ticketmaster_same_gig(db, artist, monkeypatch):
+    # The real okgiorgio case from the on-the-wire check: rockol spells the city
+    # "Segrate", Ticketmaster returns "Segrate (Milano)" which its adapter has
+    # already cleaned to city="Segrate" + province="MI". Same artist+date must
+    # collapse to a single Lombardia event carrying both source links.
+    rockol = ScrapedEvent(source="rockol", source_event_id="r1", date=FUTURE, city="Segrate",
+                          province="MI", province_raw="Milano", venue="Circolo Magnolia",
+                          ticket_url="https://rockol/r1")
+    tm = ScrapedEvent(source="ticketmaster", source_event_id="t1", date=FUTURE, city="Segrate",
+                      province="MI", province_raw="Milano", ticket_url="https://tm/t1")
+    _fake_adapters(monkeypatch, {"rockol": [rockol], "ticketmaster": [tm]})
+
+    pipeline.scan_artist(db, artist)
+    db.commit()
+
+    assert db.query(Event).count() == 1
+    e = db.query(Event).one()
+    assert e.city == "Segrate" and e.province == "MI" and e.region == "Lombardia"
+    assert {s.source for s in e.sources} == {"rockol", "ticketmaster"}
+    assert {s.ticket_url for s in e.sources} == {"https://rockol/r1", "https://tm/t1"}
+
+
 def test_past_events_are_not_stored(db, artist, monkeypatch):
     _fake_adapters(monkeypatch, {
         "dice": [ScrapedEvent(source="dice", date=PAST, city="Roma")],

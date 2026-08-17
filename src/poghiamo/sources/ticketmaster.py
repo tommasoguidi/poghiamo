@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 
 import requests
 
+from poghiamo import geo
 from poghiamo.config import TICKETMASTER_API_KEY
 from poghiamo.sources.base import ArtistRef, RateLimiter, ScrapedEvent, SourceAdapter, normalize_city
 
@@ -20,6 +22,7 @@ logger = logging.getLogger(__name__)
 _ATTRACTIONS = "https://app.ticketmaster.com/discovery/v2/attractions.json"
 _EVENTS = "https://app.ticketmaster.com/discovery/v2/events.json"
 _rl = RateLimiter(0.5)  # docs say 5/s, FAQ says 2/s: stay well under
+_CITY_PROVINCE = re.compile(r"^(.*?)\s*\(([^)]+)\)\s*$")
 
 
 class TicketmasterAdapter(SourceAdapter):
@@ -72,7 +75,7 @@ class TicketmasterAdapter(SourceAdapter):
             if date is None:
                 continue
             venue = (((ev.get("_embedded") or {}).get("venues") or [{}]) or [{}])[0]
-            city = (venue.get("city") or {}).get("name")
+            city, province_name = _split_city((venue.get("city") or {}).get("name"))
             loc = venue.get("location") or {}
             url = ev.get("url")
             events.append(
@@ -83,6 +86,8 @@ class TicketmasterAdapter(SourceAdapter):
                     time=_parse_time(start.get("localTime")),
                     venue=venue.get("name"),
                     city=city,
+                    province=geo.province_name_to_sigla(province_name) if province_name else None,
+                    province_raw=province_name,
                     lat=_f(loc.get("latitude")),
                     lon=_f(loc.get("longitude")),
                     ticket_url=url,
@@ -90,6 +95,20 @@ class TicketmasterAdapter(SourceAdapter):
                 )
             )
         return events
+
+
+def _split_city(name: str | None) -> tuple[str | None, str | None]:
+    """Ticketmaster leaves `state` empty for Italian venues and instead appends
+    the province name in parentheses to some city names ('Segrate (Milano)').
+    Split that into (clean_city, province_name) so the pipeline can resolve the
+    region and stays consistent with how other sources spell the city; a plain
+    city name comes back unchanged with no province."""
+    if not name:
+        return None, None
+    m = _CITY_PROVINCE.match(name.strip())
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return name.strip(), None
 
 
 def _parse_date(value: str | None) -> dt.date | None:
