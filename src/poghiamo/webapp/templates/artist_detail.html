@@ -1,8 +1,19 @@
 {% extends "base.html" %}
 
 {% block content %}
+{# Mobile: iOS-style sticky back bar. Goes to the previous screen (Concerti,
+   Calendario, Artisti…), falling back to /artists when there's no history. #}
+<div class="md:hidden sticky top-0 z-40 bg-background/80 backdrop-blur border-b border-zinc-800">
+    <a href="/artists" onclick="if (history.length > 1) { history.back(); return false; }"
+       class="inline-flex items-center gap-0.5 text-primary pl-2 pr-4 py-3 active:opacity-60">
+        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+        <span class="text-base font-medium">Indietro</span>
+    </a>
+</div>
+
 <div class="max-w-3xl mx-auto px-6 py-12 space-y-6">
-    <a href="/artists" class="text-xs text-zinc-500 hover:text-cream">← Artisti</a>
+    <a href="/artists" onclick="if (history.length > 1) { history.back(); return false; }"
+       class="hidden md:inline-block text-xs text-zinc-500 hover:text-cream">← Indietro</a>
 
     <div class="flex items-center gap-4">
         {% if artist.image_url %}

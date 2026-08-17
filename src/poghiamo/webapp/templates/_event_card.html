@@ -10,7 +10,11 @@
 
     <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2 flex-wrap">
+            {% if link_artist is not defined or link_artist %}
             <a href="/artists/{{ e.artist.id }}" class="text-cream font-semibold hover:text-primary transition-colors">{{ e.artist.name }}</a>
+            {% else %}
+            <span class="text-cream font-semibold">{{ e.artist.name }}</span>
+            {% endif %}
             {% if e.is_new %}<span class="text-[10px] uppercase tracking-wide bg-primary/15 text-rose-300 px-1.5 py-0.5 rounded">nuovo</span>{% endif %}
             {% if e.is_stale %}<span class="text-[10px] uppercase tracking-wide bg-amber-500/15 text-amber-300 px-1.5 py-0.5 rounded" title="Non più vista dalle fonti di recente">da ricontrollare</span>{% endif %}
             {% if e.is_custom %}<span class="inline-flex items-center text-zinc-400" title="Aggiunto a mano da un utente"><svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-5 0-9 2.5-9 6v2h18v-2c0-3.5-4-6-9-6Z"/></svg></span>{% endif %}
@@ -32,19 +36,19 @@
         </div>
     </div>
 
-    <div class="shrink-0 self-start flex flex-col items-center gap-2">
+    <div class="shrink-0 self-start flex flex-col items-center gap-0.5 -mr-1">
         {% if e.is_saved %}
         <form action="/events/{{ e.id }}/unsave" method="POST">
-            <button type="submit" title="Rimuovi dal calendario" class="text-primary hover:text-rose-400 transition-colors text-lg">★</button>
+            <button type="submit" title="Rimuovi dal calendario" class="w-10 h-10 flex items-center justify-center text-primary hover:text-rose-400 transition-colors text-xl">★</button>
         </form>
         {% else %}
         <form action="/events/{{ e.id }}/save" method="POST">
-            <button type="submit" title="Salva nel calendario" class="text-zinc-500 hover:text-primary transition-colors text-lg">☆</button>
+            <button type="submit" title="Salva nel calendario" class="w-10 h-10 flex items-center justify-center text-zinc-500 hover:text-primary transition-colors text-xl">☆</button>
         </form>
         {% endif %}
         {% if e.can_delete %}
         <form action="/events/{{ e.id }}/custom-delete" method="POST" onsubmit="return confirm('Eliminare questo concerto aggiunto a mano?');">
-            <button type="submit" title="Elimina" class="text-zinc-600 hover:text-red-400 transition-colors text-xs">🗑</button>
+            <button type="submit" title="Elimina" class="w-10 h-10 flex items-center justify-center text-zinc-600 hover:text-red-400 transition-colors text-sm">🗑</button>
         </form>
         {% endif %}
     </div>

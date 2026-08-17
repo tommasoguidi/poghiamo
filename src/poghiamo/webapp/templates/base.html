@@ -3,7 +3,7 @@
 <html lang="it" class="dark">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>poghiamo</title>
     {% if tailwind_dev %}
     <!-- DEV: Tailwind CDN (run `npm run watch:css` instead to use the link below) -->
@@ -31,18 +31,53 @@
     <link rel="stylesheet" href="/static/tailwind.css">
     {% endif %}
 </head>
-<body class="bg-background text-cream min-h-screen font-sans">
+<body class="bg-background text-cream min-h-screen font-sans{% if user %} pb-28 md:pb-0{% endif %}">
 
 {% if user %}
     {% set p = request.url.path %}
-    <nav class="sticky top-0 z-50 bg-background/90 border-b border-zinc-800 px-6 py-3 flex items-center justify-between">
+    {% set tab = 'concerti' if p == '/' else
+                 'artisti' if p.startswith('/artists') else
+                 'calendario' if p == '/calendario' else
+                 'impostazioni' if p == '/settings' else '' %}
+
+    {# Desktop: top nav. Mobile: an app-style bottom tab bar (below). #}
+    <nav class="hidden md:flex sticky top-0 z-50 bg-background/90 backdrop-blur border-b border-zinc-800 px-6 py-3 items-center justify-between">
         <a href="/" class="text-xl font-bold tracking-tight text-cream">poghi<span class="text-primary">amo</span></a>
         <div class="flex items-center gap-5">
-            <a href="/" class="text-sm font-medium transition-colors {{ 'text-primary' if p == '/' else 'text-zinc-400 hover:text-cream' }}">Concerti</a>
-            <a href="/artists" class="text-sm font-medium transition-colors {{ 'text-primary' if p.startswith('/artists') else 'text-zinc-400 hover:text-cream' }}">Artisti</a>
-            <a href="/calendario" class="text-sm font-medium transition-colors {{ 'text-primary' if p == '/calendario' else 'text-zinc-400 hover:text-cream' }}">Calendario</a>
-            <a href="/settings" class="text-sm font-medium transition-colors {{ 'text-primary' if p == '/settings' else 'text-zinc-400 hover:text-cream' }}">Impostazioni</a>
+            <a href="/" class="text-sm font-medium transition-colors {{ 'text-primary' if tab == 'concerti' else 'text-zinc-400 hover:text-cream' }}">Concerti</a>
+            <a href="/artists" class="text-sm font-medium transition-colors {{ 'text-primary' if tab == 'artisti' else 'text-zinc-400 hover:text-cream' }}">Artisti</a>
+            <a href="/calendario" class="text-sm font-medium transition-colors {{ 'text-primary' if tab == 'calendario' else 'text-zinc-400 hover:text-cream' }}">Calendario</a>
+            <a href="/settings" class="text-sm font-medium transition-colors {{ 'text-primary' if tab == 'impostazioni' else 'text-zinc-400 hover:text-cream' }}">Impostazioni</a>
         </div>
+    </nav>
+
+    <nav class="md:hidden fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 bg-card/95 backdrop-blur border-t border-zinc-800 px-2 pt-2 pb-[calc(0.5rem_+_env(safe-area-inset-bottom))]">
+        <a href="/" class="flex flex-col items-center gap-1 py-1 transition-colors {{ 'text-primary' if tab == 'concerti' else 'text-zinc-500' }}">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M14.5 6.5v11" stroke-dasharray="1.5 2"/>
+            </svg>
+            <span class="text-[11px] font-medium">Concerti</span>
+        </a>
+        <a href="/artists" class="flex flex-col items-center gap-1 py-1 transition-colors {{ 'text-primary' if tab == 'artisti' else 'text-zinc-500' }}">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11.5a6 6 0 0 0 12 0"/><path d="M12 17.5V21"/><path d="M8.5 21h7"/>
+            </svg>
+            <span class="text-[11px] font-medium">Artisti</span>
+        </a>
+        <a href="/calendario" class="flex flex-col items-center gap-1 py-1 transition-colors {{ 'text-primary' if tab == 'calendario' else 'text-zinc-500' }}">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17"/><path d="M8 3.5v3M16 3.5v3"/>
+            </svg>
+            <span class="text-[11px] font-medium">Calendario</span>
+        </a>
+        <a href="/settings" class="flex flex-col items-center gap-1 py-1 transition-colors {{ 'text-primary' if tab == 'impostazioni' else 'text-zinc-500' }}">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M10 6h9"/><path d="M5 6h1.5"/><circle cx="8.25" cy="6" r="1.75"/>
+                <path d="M14 12h5"/><path d="M5 12h4.5"/><circle cx="12.25" cy="12" r="1.75"/>
+                <path d="M10 18h9"/><path d="M5 18h1.5"/><circle cx="8.25" cy="18" r="1.75"/>
+            </svg>
+            <span class="text-[11px] font-medium">Impostazioni</span>
+        </a>
     </nav>
 {% endif %}
 
