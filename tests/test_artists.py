@@ -1,10 +1,24 @@
 """Artists: search proxy, add/dedup, unfollow persistence, regions, enrichment."""
 
 import pytest
+import requests
 from conftest import login, make_user
 
 from poghiamo.database.models import Artist, Follow, User
 from poghiamo.services import artist_search
+
+
+class _MBResp:
+    def __init__(self, status, payload=None):
+        self.status_code = status
+        self._payload = payload or {}
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(str(self.status_code))
 
 
 @pytest.fixture(autouse=True)
@@ -252,3 +266,34 @@ def test_enrich_artist_duplicate_mbid_left_unmatched(db, monkeypatch):
     db.refresh(dup)
     assert dup.mbid is None
     assert dup.resolution_status == "unmatched"
+
+
+def test_musicbrainz_retries_on_503_then_succeeds(monkeypatch):
+    # MusicBrainz search 503s under load; a retry with backoff clears it instead
+    # of leaving the artist stuck 'pending'. (_mb_request is tested directly: the
+    # autouse fixture stubs out search_musicbrainz.)
+    monkeypatch.setattr(artist_search.time, "sleep", lambda *a, **k: None)
+    calls = {"n": 0}
+
+    def fake_get(*a, **k):
+        calls["n"] += 1
+        return _MBResp(503) if calls["n"] == 1 else _MBResp(200, {"artists": []})
+
+    monkeypatch.setattr(artist_search.requests, "get", fake_get)
+    resp = artist_search._mb_request("X")
+    assert calls["n"] == 2  # first 503, retried, then 200
+    assert resp.status_code == 200
+
+
+def test_musicbrainz_request_gives_up_after_retries(monkeypatch):
+    monkeypatch.setattr(artist_search.time, "sleep", lambda *a, **k: None)
+    calls = {"n": 0}
+
+    def fake_get(*a, **k):
+        calls["n"] += 1
+        return _MBResp(503)
+
+    monkeypatch.setattr(artist_search.requests, "get", fake_get)
+    resp = artist_search._mb_request("X")
+    assert calls["n"] == 1 + artist_search._MB_RETRIES  # bounded number of tries
+    assert resp.status_code == 503  # caller's raise_for_status then leaves it pending

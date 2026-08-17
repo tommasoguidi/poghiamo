@@ -154,14 +154,23 @@ function toggleAdd() {
         if (!box.contains(e.target) && e.target !== input) box.classList.add("hidden");
     });
 
-    // Live status updates while any artist is still "pending".
+    // Live status updates while any artist is still "pending". Bounded: if
+    // MusicBrainz stays down, stop after ~1 min instead of spinning forever;
+    // the artist stays pending server-side, so a later visit retries.
     function statusText(a) {
         if (a.status === "pending") return "identificazione in corso…";
         if (a.status === "unmatched") return "da verificare";
         return a.country || "";
     }
+    let pollsLeft = 15;
+    function stopSpinner() {
+        document.querySelectorAll('[data-artist-id][data-status="pending"]').forEach(function (el) {
+            el.textContent = "";  // drop the "in corso" text; it's not resolving now
+        });
+    }
     function pollStatuses() {
         if (!document.querySelector('[data-artist-id][data-status="pending"]')) return;
+        if (pollsLeft-- <= 0) { stopSpinner(); return; }
         fetch("/api/artists/status")
             .then(function (r) { return r.json(); })
             .then(function (data) {

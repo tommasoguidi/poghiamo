@@ -99,9 +99,10 @@ def maybe_retry_enrichment(artist_ids: list[int], background_tasks) -> None:
 # (enrichment runs in background threads, so the lock matters).
 _mb_lock = threading.Lock()
 _mb_last_call = 0.0
+_MB_RETRIES = 2  # extra attempts on a 503; MusicBrainz's search sheds load often
 
 
-def search_musicbrainz(name: str) -> MusicBrainzMatch | None:
+def _mb_throttle() -> None:
     global _mb_last_call
     with _mb_lock:
         wait = 1.1 - (time.monotonic() - _mb_last_call)
@@ -109,12 +110,29 @@ def search_musicbrainz(name: str) -> MusicBrainzMatch | None:
             time.sleep(wait)
         _mb_last_call = time.monotonic()
 
-    resp = requests.get(
-        MUSICBRAINZ_SEARCH_URL,
-        params={"query": f'artist:"{name}"', "fmt": "json", "limit": 3},
-        headers={"User-Agent": _MB_USER_AGENT},
-        timeout=8,
-    )
+
+def _mb_request(name: str) -> requests.Response:
+    """Throttled MusicBrainz GET that retries a few times on 503. Its search
+    endpoint returns 503 under load far more than it actually fails; a short
+    backoff clears most of them, which is the difference between an artist
+    resolving and getting stuck 'pending' (spinning in the UI)."""
+    resp = None
+    for attempt in range(_MB_RETRIES + 1):
+        _mb_throttle()
+        resp = requests.get(
+            MUSICBRAINZ_SEARCH_URL,
+            params={"query": f'artist:"{name}"', "fmt": "json", "limit": 3},
+            headers={"User-Agent": _MB_USER_AGENT},
+            timeout=8,
+        )
+        if resp.status_code != 503 or attempt == _MB_RETRIES:
+            return resp
+        time.sleep(1.5 * (attempt + 1))
+    return resp
+
+
+def search_musicbrainz(name: str) -> MusicBrainzMatch | None:
+    resp = _mb_request(name)
     resp.raise_for_status()
     artists = resp.json().get("artists", [])
     if not artists:
