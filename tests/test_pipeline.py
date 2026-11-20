@@ -7,7 +7,7 @@ from conftest import make_user
 
 from poghiamo.database.models import Artist, Event, EventSource, Follow, ScanLog
 from poghiamo.services import pipeline
-from poghiamo.sources.base import ScrapedEvent
+from poghiamo.sources.base import FetchResult, ScrapedEvent
 
 FUTURE = dt.date.today() + dt.timedelta(days=30)
 PAST = dt.date.today() - dt.timedelta(days=5)
@@ -251,15 +251,131 @@ def test_adapter_can_opt_out_of_a_run(db, artist, monkeypatch):
     assert db.query(ScanLog).one().status == "skipped"
 
 
-def test_rockol_budget_guard_counts_month(db, artist):
-    from poghiamo.config import ROCKOL_MONTHLY_BUDGET
-    from poghiamo.sources.rockol import RockolAdapter
+def test_scan_log_records_the_transport(db, artist, monkeypatch):
+    class ViaHome:
+        name = "rockol"
+        enabled = True
 
-    adapter = RockolAdapter()
-    # Under budget with no history
-    assert adapter.should_run(db, artist) is True
-    # Fill the month's budget with spent runs (ok/error/timeout count)
-    for _ in range(ROCKOL_MONTHLY_BUDGET):
-        db.add(ScanLog(artist_id=artist.id, source="rockol", status="ok", found=0))
+        def fetch(self, ref):
+            ev = ScrapedEvent(source="rockol", date=FUTURE, city="Torino", province="TO")
+            return FetchResult([ev], via="home")
+
+    class FailingViaZenrows:
+        name = "other"
+        enabled = True
+
+        def fetch(self, ref):
+            err = RuntimeError("down")
+            err.via = "zenrows"
+            raise err
+
+    monkeypatch.setattr(pipeline, "enabled_adapters", lambda: [ViaHome(), FailingViaZenrows()])
+    summary = pipeline.scan_artist(db, artist)
     db.commit()
-    assert adapter.should_run(db, artist) is False
+
+    assert summary["rockol"] == {"status": "ok", "found": 1, "via": "home"}
+    assert db.query(Event).count() == 1  # a FetchResult's events are stored like a plain list
+    logs = {log.source: log for log in db.query(ScanLog).all()}
+    assert logs["rockol"].via == "home"
+    assert (logs["other"].status, logs["other"].via) == ("error", "zenrows")
+
+
+def test_error_messages_never_store_api_keys(db, artist, monkeypatch):
+    # requests' HTTPError text carries the full URL, query string included, and
+    # Ticketmaster takes its key as the apikey parameter.
+    import requests
+
+    url = (
+        "https://app.ticketmaster.com/discovery/v2/events.json"
+        "?keyword=x&apikey=SECRET123&classificationName=music"
+    )
+    _fake_adapters(
+        monkeypatch,
+        {"ticketmaster": requests.HTTPError(f"401 Client Error: Unauthorized for url: {url}")},
+    )
+    pipeline.scan_artist(db, artist)
+    db.commit()
+
+    message = db.query(ScanLog).one().message
+    assert "SECRET123" not in message
+    assert "apikey=***" in message
+    assert "keyword=x" in message  # the rest of the URL stays readable
+
+
+@pytest.fixture
+def rockol_adapter(monkeypatch):
+    """ZenRows-only rockol adapter with a budget of 3, isolated from the local .env."""
+    import poghiamo.sources.rockol as mod
+
+    monkeypatch.setattr(mod, "ROCKOL_PROXY_URL", "")
+    monkeypatch.setattr(mod, "ZENROWS_API_KEY", "key")
+    monkeypatch.setattr(mod, "ROCKOL_MONTHLY_BUDGET", 3)
+    return mod.RockolAdapter()
+
+
+def _log_rockol(db, artist, via, times):
+    for _ in range(times):
+        db.add(ScanLog(artist_id=artist.id, source="rockol", status="ok", found=0, via=via))
+    db.commit()
+
+
+def test_rockol_budget_counts_only_zenrows_fetches(db, artist, rockol_adapter):
+    assert rockol_adapter.should_run(db, artist) is True  # no history
+    _log_rockol(db, artist, "home", 5)  # home-served fetches are free
+    assert rockol_adapter.should_run(db, artist) is True
+    _log_rockol(db, artist, "zenrows", 3)
+    assert rockol_adapter.should_run(db, artist) is False
+
+
+def test_rockol_home_path_outlives_the_zenrows_budget(db, artist, rockol_adapter, monkeypatch):
+    import requests
+
+    import poghiamo.sources.rockol as mod
+    from poghiamo.sources.base import ArtistRef, RateLimiter
+
+    monkeypatch.setattr(mod, "ROCKOL_PROXY_URL", "http://10.77.0.2:8888")
+    monkeypatch.setattr(mod, "_rl", RateLimiter(0))
+    _log_rockol(db, artist, "zenrows", 3)
+    assert rockol_adapter.should_run(db, artist) is True  # home needs no budget
+
+    # With the budget spent, a home failure has nothing to fall back on.
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append(url)
+        raise requests.ConnectionError("tunnel down")
+
+    monkeypatch.setattr(mod.requests, "get", fake_get)
+    ref = ArtistRef(id=artist.id, name=artist.name, name_normalized=artist.name_normalized)
+    with pytest.raises(mod.RockolFetchError):
+        rockol_adapter.fetch(ref)
+    assert calls == [mod.rockol_search_url("faccianuvola")]  # ZenRows never called
+
+
+def test_migration_adds_scan_log_transport_and_backfills_rockol():
+    from sqlalchemy import inspect, text
+
+    from poghiamo.database.engine import _run_migrations, engine
+
+    # Put scan_logs back the way it was before the column existed.
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE scan_logs DROP COLUMN via"))
+        conn.execute(
+            text(
+                "INSERT INTO scan_logs (source, status, found) VALUES "
+                "('rockol', 'ok', 2), ('rockol', 'skipped', 0), ('dice', 'ok', 1)"
+            )
+        )
+
+    _run_migrations()
+
+    assert "via" in [c["name"] for c in inspect(engine).get_columns("scan_logs")]
+    with engine.begin() as conn:
+        rows = conn.execute(text("SELECT source, status, via FROM scan_logs ORDER BY id")).all()
+    # Only fetches that really hit ZenRows are attributed to it.
+    assert [tuple(r) for r in rows] == [
+        ("rockol", "ok", "zenrows"),
+        ("rockol", "skipped", None),
+        ("dice", "ok", None),
+    ]
+    _run_migrations()  # idempotent

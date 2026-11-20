@@ -207,6 +207,9 @@ class ScanLog(Base):
     status = Column(String, nullable=False)  # ok | error | timeout | disabled | skipped
     found = Column(Integer, default=0)
     message = Column(String, nullable=True)
+    # Transport that served the fetch, for sources with more than one (rockol:
+    # "home" | "zenrows"); NULL otherwise.
+    via = Column(String, nullable=True)
     ran_at = Column(DateTime, default=func.now(), index=True)
 
 

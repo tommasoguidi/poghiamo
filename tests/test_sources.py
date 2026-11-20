@@ -3,9 +3,12 @@
 import datetime as dt
 from pathlib import Path
 
-from poghiamo.sources.base import ArtistRef, resolve_area
+import pytest
+import requests
+
+from poghiamo.sources.base import ArtistRef, RateLimiter, resolve_area
 from poghiamo.sources.dice import DiceAdapter
-from poghiamo.sources.rockol import parse_rockol_html
+from poghiamo.sources.rockol import RockolFetchError, parse_rockol_html
 from poghiamo.sources.ticketmaster import TicketmasterAdapter, _split_city
 from poghiamo.sources.ticketsms import TicketSmsAdapter, _slug
 
@@ -248,6 +251,124 @@ def test_rockol_parser_keeps_raw_province_when_unresolved():
 def test_rockol_parser_ignores_non_event_anchors():
     html = '<a href="/some/other/page" title="not an event 2026">x</a>'
     assert parse_rockol_html(html) == []
+
+
+# --- rockol transports (home proxy first, ZenRows as fallback) ---
+
+
+class _Resp:
+    def __init__(self, status=200, text="", headers=None):
+        self.status_code = status
+        self.text = text
+        self.headers = headers or {}
+
+
+@pytest.fixture
+def rockol(monkeypatch):
+    """A fresh adapter with both transports configured and the crawl delay off.
+
+    Returns (adapter, calls, routes): `routes` maps "home"/"zenrows" to the
+    _Resp to answer with, or an exception to raise; `calls` records, in order,
+    which transport each request went to."""
+    import poghiamo.sources.rockol as mod
+
+    monkeypatch.setattr(mod, "ROCKOL_PROXY_URL", "http://10.77.0.2:8888")
+    monkeypatch.setattr(mod, "ZENROWS_API_KEY", "SECRET-KEY")
+    monkeypatch.setattr(mod, "_rl", RateLimiter(0))
+    html = (_FIXTURES / "rockol_search.html").read_text()
+    routes = {"home": _Resp(text=html), "zenrows": _Resp(text=html)}
+    calls = []
+
+    def fake_get(url, **kwargs):
+        transport = "zenrows" if url == mod._ZENROWS else "home"
+        if transport == "home":
+            assert kwargs["proxies"]["https"] == "http://10.77.0.2:8888"
+        calls.append(transport)
+        outcome = routes[transport]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(mod.requests, "get", fake_get)
+    return mod.RockolAdapter(), calls, routes
+
+
+def test_rockol_home_path_serves_without_touching_zenrows(rockol):
+    adapter, calls, _ = rockol
+    result = adapter.fetch(ARTIST)
+    assert result.via == "home"
+    assert len(result.events) == 2
+    assert calls == ["home"]
+
+
+def test_rockol_falls_back_to_zenrows_when_home_is_unreachable(rockol):
+    adapter, calls, routes = rockol
+    routes["home"] = requests.ConnectionError("tunnel down")
+    result = adapter.fetch(ARTIST)
+    assert result.via == "zenrows"
+    assert len(result.events) == 2
+    # Unreachable is not a block: the next fetch tries home again.
+    adapter.fetch(ARTIST)
+    assert calls == ["home", "zenrows", "home", "zenrows"]
+
+
+def test_rockol_block_on_the_home_line_starts_a_cooldown(rockol):
+    adapter, calls, routes = rockol
+    routes["home"] = _Resp(status=403, headers={"cf-mitigated": "challenge"})
+    assert adapter.fetch(ARTIST).via == "zenrows"
+    # While cooling down the home line is left alone, even if it would work again.
+    routes["home"] = _Resp(text="")
+    assert adapter.fetch(ARTIST).via == "zenrows"
+    assert calls == ["home", "zenrows", "zenrows"]
+
+
+def test_rockol_site_error_through_home_does_not_spend_zenrows(rockol):
+    # The home path works and rockol itself is failing: ZenRows would get the same.
+    adapter, calls, routes = rockol
+    routes["home"] = _Resp(status=500)
+    with pytest.raises(RockolFetchError) as exc:
+        adapter.fetch(ARTIST)
+    assert exc.value.via == "home"
+    assert calls == ["home"]
+
+
+def test_rockol_home_failure_without_a_fallback_raises(rockol, monkeypatch):
+    import poghiamo.sources.rockol as mod
+
+    adapter, calls, routes = rockol
+    monkeypatch.setattr(mod, "ZENROWS_API_KEY", "")
+    routes["home"] = requests.ConnectionError("tunnel down")
+    with pytest.raises(RockolFetchError) as exc:
+        adapter.fetch(ARTIST)
+    assert exc.value.via == "home"
+    assert calls == ["home"]
+
+
+def test_rockol_zenrows_errors_never_leak_the_api_key(rockol, monkeypatch):
+    import poghiamo.sources.rockol as mod
+
+    adapter, _, routes = rockol
+    monkeypatch.setattr(mod, "ROCKOL_PROXY_URL", "")
+    # requests puts the full request URL, key included, in its own error text.
+    for outcome in (
+        requests.ConnectionError("Max retries exceeded with url: /v1/?apikey=SECRET-KEY"),
+        _Resp(status=422, text="bad request for apikey=SECRET-KEY"),
+    ):
+        routes["zenrows"] = outcome
+        with pytest.raises(RockolFetchError) as exc:
+            adapter.fetch(ARTIST)
+        assert exc.value.via == "zenrows"
+        assert "SECRET-KEY" not in str(exc.value)
+
+
+def test_rockol_is_off_with_no_transport_configured(monkeypatch):
+    import poghiamo.sources.rockol as mod
+
+    monkeypatch.setattr(mod, "ROCKOL_PROXY_URL", "")
+    monkeypatch.setattr(mod, "ZENROWS_API_KEY", "")
+    assert mod.RockolAdapter().enabled is False
+    monkeypatch.setattr(mod, "ROCKOL_PROXY_URL", "http://10.77.0.2:8888")
+    assert mod.RockolAdapter().enabled is True  # the home path alone is enough
 
 
 # --- region resolution (shared) ---

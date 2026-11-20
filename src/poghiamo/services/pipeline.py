@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from sqlalchemy import select
@@ -18,10 +19,20 @@ from sqlalchemy import select
 from poghiamo.config import SOURCE_TIMEOUT_SECONDS
 from poghiamo.database.models import Artist, Event, EventSource, Follow, ScanLog
 from poghiamo.sources import enabled_adapters
-from poghiamo.sources.base import ArtistRef, normalize_city, resolve_area
+from poghiamo.sources.base import ArtistRef, FetchResult, normalize_city, resolve_area
 from poghiamo.sources.ticketmaster import TicketmasterAdapter
 
 logger = logging.getLogger(__name__)
+
+
+# requests puts the full request URL in its error text, query string included,
+# so an API key passed as a parameter (Ticketmaster's apikey) would land in the
+# scan log, the container logs and the admin page.
+_SECRET_PARAM = re.compile(r"(?i)\b((?:api_?key|key|token|secret)=)[^&\s'\"]+")
+
+
+def _redact(message: str) -> str:
+    return _SECRET_PARAM.sub(r"\1***", message)
 
 
 def _run_adapter(adapter, ref: ArtistRef, tm_attraction_id):
@@ -58,15 +69,24 @@ def scan_artist(db, artist: Artist) -> dict:
         for fut in as_completed(futures, timeout=None):
             adapter = futures[fut]
             try:
-                events = fut.result(timeout=SOURCE_TIMEOUT_SECONDS)
-                summary[adapter.name] = {"status": "ok", "found": len(events)}
-                all_events.extend(events)
+                result = fut.result(timeout=SOURCE_TIMEOUT_SECONDS)
+                via = None
+                if isinstance(result, FetchResult):
+                    result, via = result.events, result.via
+                summary[adapter.name] = {"status": "ok", "found": len(result), "via": via}
+                all_events.extend(result)
             except TimeoutError:
                 summary[adapter.name] = {"status": "timeout", "found": 0}
                 logger.warning(f"{adapter.name}: timeout scanning '{artist.name}'")
             except Exception as e:
-                summary[adapter.name] = {"status": "error", "found": 0, "message": str(e)[:200]}
-                logger.warning(f"{adapter.name}: error scanning '{artist.name}': {e}")
+                message = _redact(str(e))
+                summary[adapter.name] = {
+                    "status": "error",
+                    "found": 0,
+                    "message": message[:200],
+                    "via": getattr(e, "via", None),
+                }
+                logger.warning(f"{adapter.name}: error scanning '{artist.name}': {message}")
 
     # Cache Ticketmaster's attractionId once resolved (best-effort, non-fatal).
     _maybe_cache_tm_id(db, artist, adapters)
@@ -81,6 +101,7 @@ def scan_artist(db, artist: Artist) -> dict:
                 status=info["status"],
                 found=info.get("found", 0),
                 message=info.get("message"),
+                via=info.get("via"),
             )
         )
     artist.last_scanned_at = dt.datetime.now(dt.timezone.utc)

@@ -79,6 +79,21 @@ def _run_migrations():
                     text("ALTER TABLE events ADD COLUMN added_by_user_id INTEGER REFERENCES users(id)")
                 )
 
+    # Migration 5 (home fetcher): transport on scan_logs. Every rockol fetch
+    # logged before this column existed went through ZenRows, so backfill them:
+    # the monthly budget counts rows by transport.
+    if "scan_logs" in inspector.get_table_names():
+        columns = [c["name"] for c in inspector.get_columns("scan_logs")]
+        if "via" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE scan_logs ADD COLUMN via VARCHAR"))
+                conn.execute(
+                    text(
+                        "UPDATE scan_logs SET via = 'zenrows' WHERE source = 'rockol' "
+                        "AND status IN ('ok', 'error', 'timeout')"
+                    )
+                )
+
 
 def seed_admin():
     """Bootstrap the admin account from ADMIN_USERNAME / ADMIN_PASSWORD.

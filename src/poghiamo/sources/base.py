@@ -51,6 +51,15 @@ class ScrapedEvent(BaseModel):
         return v.upper() if v else v
 
 
+@dataclass
+class FetchResult:
+    """Events plus the transport that served them, for an adapter with more than
+    one way to reach its source. Single-transport adapters return the bare list."""
+
+    events: list[ScrapedEvent]
+    via: str | None = None
+
+
 def normalize_city(name: str | None) -> str:
     if not name:
         return ""
@@ -93,7 +102,9 @@ class SourceAdapter:
 
     `fetch` MUST be self-contained: honor the adapter's own rate limit, keep
     only Italian events, and raise on failure (the pipeline records it and
-    moves on). It must never return foreign dates.
+    moves on). It must never return foreign dates. An adapter with several
+    transports may return a FetchResult, and tag its exceptions with a `via`
+    attribute, so the scan log records which one was used.
     """
 
     name: str = "base"
@@ -108,5 +119,5 @@ class SourceAdapter:
         that has spent its monthly quota. Default: always run when enabled."""
         return True
 
-    def fetch(self, artist: ArtistRef) -> list[ScrapedEvent]:
+    def fetch(self, artist: ArtistRef) -> list[ScrapedEvent] | FetchResult:
         raise NotImplementedError

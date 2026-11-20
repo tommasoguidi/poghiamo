@@ -35,10 +35,19 @@ SCAN_BATCH_SIZE: int = int(os.getenv("SCAN_BATCH_SIZE", 20))
 EVENT_STALE_DAYS: int = int(os.getenv("EVENT_STALE_DAYS", 7))
 # Ticketmaster Discovery API key; the adapter disables itself when empty.
 TICKETMASTER_API_KEY: str = os.getenv("TICKETMASTER_API_KEY", "")
-# ZenRows key for the rockol fetch (residential proxy + JS render, to clear
-# rockol's Cloudflare interactive challenge). The rockol adapter disables
-# itself when empty.
+# Forward proxy on the always-on home PC, reached over the WireGuard tunnel
+# (e.g. http://10.77.0.2:8888). When set, rockol is fetched through it with a
+# plain GET, so the request exits from the residential line, and ZenRows becomes
+# the fallback. Empty = no home path.
+ROCKOL_PROXY_URL: str = os.getenv("ROCKOL_PROXY_URL", "").strip()
+# Hours to keep the home line away from rockol after rockol blocks it.
+ROCKOL_HOME_COOLDOWN_HOURS: float = float(os.getenv("ROCKOL_HOME_COOLDOWN_HOURS", 6))
+# ZenRows key for the rockol fetch (rented residential proxy + JS render, which
+# clears rockol's Cloudflare challenge). Used alone, or as the fallback when the
+# home path is down or blocked. The rockol adapter is off when both this and
+# ROCKOL_PROXY_URL are empty.
 ZENROWS_API_KEY: str = os.getenv("ZENROWS_API_KEY", "")
-# Hard monthly cap on rockol scraping requests, to stay inside the ZenRows free
+# Hard monthly cap on ZenRows-served rockol fetches, to stay inside the free
 # tier (5000 credits/month; js_render+premium_proxy = 25 credits each → 200/mo).
+# Fetches served by the home path do not count.
 ROCKOL_MONTHLY_BUDGET: int = int(os.getenv("ROCKOL_MONTHLY_BUDGET", 180))
