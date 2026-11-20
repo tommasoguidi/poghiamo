@@ -3,6 +3,7 @@
 
 Jobs:
   - nightly SQLite backup;
+  - nightly DICE slug resolution from DICE's artist sitemap, when due;
   - periodic events sweep over followed artists (each artist scanned across all
     enabled sources, deduplicated across users, on a weekly-ish cadence).
 """
@@ -48,10 +49,29 @@ def run_scan_batch():
         scan_artist_by_id(artist_id)
 
 
+def run_dice_slugs():
+    """Match followed artists to DICE through its sitemap, when a crawl is due
+    (resolve_slugs decides). Blocks this loop for up to an hour, hence a night slot."""
+    from poghiamo.database.engine import SessionLocal
+    from poghiamo.sources.dice import resolve_slugs
+
+    db = SessionLocal()
+    try:
+        result = resolve_slugs(db)
+        if result:
+            logger.info(f"DICE slugs: {result}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"DICE slug resolution failed: {e}", exc_info=True)
+    finally:
+        db.close()
+
+
 def main():
     logger.info("Scheduler starting.")
 
     schedule.every().day.at("04:15").do(run_backup)
+    schedule.every().day.at("03:00").do(run_dice_slugs)
     # Sweep runs often but only touches artists whose cadence is due, so the
     # real per-artist frequency is SCAN_INTERVAL_DAYS; batching keeps each tick
     # small and polite to the sources.

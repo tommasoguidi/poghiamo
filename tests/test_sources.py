@@ -1,4 +1,5 @@
-"""Source adapters: parsing real API shapes, Italy-only filtering, rockol parser."""
+"""Source adapters: parsing real API shapes, Italy-only filtering, rockol parser.
+DICE has its own file, test_dice.py."""
 
 import datetime as dt
 from pathlib import Path
@@ -7,7 +8,6 @@ import pytest
 import requests
 
 from poghiamo.sources.base import ArtistRef, RateLimiter, resolve_area
-from poghiamo.sources.dice import DiceAdapter
 from poghiamo.sources.rockol import RockolFetchError, parse_rockol_html
 from poghiamo.sources.ticketmaster import TicketmasterAdapter, _split_city
 from poghiamo.sources.ticketsms import TicketSmsAdapter, _slug
@@ -88,59 +88,6 @@ def test_ticketsms_unknown_performer_returns_empty(monkeypatch):
     adapter = TicketSmsAdapter()
     monkeypatch.setattr(adapter, "_get", lambda path: R404())
     assert adapter.fetch(ARTIST) == []
-
-
-# --- DICE (trimmed real __NEXT_DATA__ fixture, one IT + one FR event) ---
-
-
-def test_dice_parses_next_data_and_filters_to_italy(monkeypatch):
-    html = (_FIXTURES / "dice_artist.html").read_text()
-
-    class RGet:
-        text = html
-
-        def raise_for_status(self):
-            pass
-
-    class RPost:
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {
-                "sections": [
-                    {"items": [{"type": "artist", "artist": {"name": "Faccianuvola", "slug": "faccianuvola-8yaw5"}}]}
-                ]
-            }
-
-    import poghiamo.sources.dice as dice_mod
-
-    monkeypatch.setattr(dice_mod.requests, "post", lambda *a, **k: RPost())
-    monkeypatch.setattr(dice_mod.requests, "get", lambda *a, **k: RGet())
-
-    events = DiceAdapter().fetch(ARTIST)
-    # Only the IT event survives the country filter
-    assert len(events) == 1
-    e = events[0]
-    assert e.source == "dice"
-    assert e.city == "Milano"
-    assert e.venue == "Circolo Magnolia"
-    assert e.date == dt.date(2026, 9, 17)
-    assert e.lat == 45.45 and e.lon == 9.28
-
-
-def test_dice_no_slug_match_returns_empty(monkeypatch):
-    class RPost:
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {"sections": [{"items": [{"type": "artist", "artist": {"name": "Someone Else", "slug": "x"}}]}]}
-
-    import poghiamo.sources.dice as dice_mod
-
-    monkeypatch.setattr(dice_mod.requests, "post", lambda *a, **k: RPost())
-    assert DiceAdapter().fetch(ARTIST) == []
 
 
 # --- Ticketmaster (real Discovery API shape captured 2026-08-17) ---
