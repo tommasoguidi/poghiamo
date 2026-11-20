@@ -18,6 +18,7 @@ from poghiamo.database.models import Artist, Event, Follow, InviteToken, SavedEv
 from poghiamo import geo
 from poghiamo.services import artist_search, feed
 from poghiamo.services.pipeline import scan_artist_by_id
+from poghiamo.services.source_health import ago_it, source_health
 from poghiamo.webapp.auth import (
     RedirectToLogin,
     generate_invite_token,
@@ -81,6 +82,7 @@ def _it_month(d):
 
 templates.env.filters["it_date"] = _it_date
 templates.env.filters["it_month"] = _it_month
+templates.env.filters["it_ago"] = ago_it
 
 
 @app.exception_handler(RedirectToLogin)
@@ -608,7 +610,9 @@ def settings_page(
 ):
     invite_tokens = []
     all_users = []
+    sources = []
     if user.is_admin:
+        sources = source_health(db)
         cutoff = datetime.now(timezone.utc) - timedelta(days=7)
         invite_tokens = (
             db.query(InviteToken)
@@ -627,6 +631,7 @@ def settings_page(
             "user": user,
             "invite_tokens": invite_tokens,
             "all_users": all_users,
+            "sources": sources,
             "error": error,
             "saved": saved,
             "hint": hint,

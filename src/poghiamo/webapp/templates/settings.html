@@ -258,6 +258,39 @@
         <p class="text-sm text-zinc-500">Nessun altro utente registrato.</p>
         {% endif %}
     </div>
+
+    {# Class names spelled out in full so the Tailwind build finds them. #}
+    {% set state_dot = {"ok": "bg-emerald-400", "failing": "bg-amber-400", "broken": "bg-red-500", "off": "bg-zinc-600", "never": "bg-zinc-600"} %}
+    {% set state_text = {"ok": "text-emerald-400", "failing": "text-amber-400", "broken": "text-red-400", "off": "text-zinc-500", "never": "text-zinc-500"} %}
+    {% set state_label = {"ok": "funziona", "failing": "errori recenti", "broken": "guasta", "off": "disattivata", "never": "mai eseguita"} %}
+    <div class="bg-card rounded-2xl p-8 border border-zinc-800">
+        <h2 class="text-lg font-semibold text-cream mb-1">Stato delle sorgenti</h2>
+        <p class="text-sm text-zinc-400 mb-4">Dal registro delle scansioni, ultimi 30 giorni.</p>
+        <ul class="space-y-3">
+            {% for s in sources %}
+            <li class="bg-zinc-900 rounded-xl px-4 py-3 text-sm">
+                <div class="flex items-center justify-between gap-4">
+                    <span class="flex items-center gap-2 text-cream font-medium">
+                        <span class="inline-block w-2.5 h-2.5 rounded-full {{ state_dot[s.state] }}"></span>{{ s.label }}
+                    </span>
+                    <span class="text-xs {{ state_text[s.state] }}">
+                        {{ state_label[s.state] }}{% if s.state in ("failing", "broken") %} ({{ s.failures_in_a_row }} di fila){% endif %}
+                    </span>
+                </div>
+                <div class="text-xs text-zinc-400 mt-1">Ultimo esito positivo: {{ s.last_ok|it_ago }} · ultima scansione: {{ s.last_run|it_ago }}</div>
+                <div class="text-xs text-zinc-500 mt-1">
+                    {{ s.ok }} ok · {{ s.failed }} fallite{% if s.skipped %} · {{ s.skipped }} saltate{% endif %} · {{ s.found }} eventi trovati
+                </div>
+                {% if s.state in ("failing", "broken") and s.last_error %}
+                <div class="text-xs text-red-400 mt-1 break-words">{{ s.last_error }}</div>
+                {% endif %}
+                {% for note in s.notes %}
+                <div class="text-xs text-zinc-500 mt-1">{{ note }}</div>
+                {% endfor %}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
     {% endif %}
 </div>
 <script>
