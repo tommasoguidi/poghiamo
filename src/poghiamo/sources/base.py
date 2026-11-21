@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import random
 import re
 import threading
 import time
@@ -83,16 +84,20 @@ def resolve_area(city: str | None, province: str | None) -> tuple[str | None, st
 
 
 class RateLimiter:
-    """Process-wide minimum spacing between calls (adapters run in threads)."""
+    """Process-wide minimum spacing between calls (adapters run in threads).
+    With `jitter`, each spacing gets a random extra of up to that many seconds,
+    so the requests do not arrive with a fixed, machine-like rhythm."""
 
-    def __init__(self, min_interval: float):
+    def __init__(self, min_interval: float, jitter: float = 0.0):
         self._min = min_interval
+        self._jitter = jitter
         self._lock = threading.Lock()
         self._last = 0.0
 
     def wait(self):
         with self._lock:
-            gap = self._min - (time.monotonic() - self._last)
+            spacing = self._min + (random.uniform(0, self._jitter) if self._jitter else 0.0)
+            gap = spacing - (time.monotonic() - self._last)
             if gap > 0:
                 time.sleep(gap)
             self._last = time.monotonic()

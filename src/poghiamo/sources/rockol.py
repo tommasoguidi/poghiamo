@@ -38,7 +38,8 @@ logger = logging.getLogger(__name__)
 
 _SEARCH = "https://www.rockol.it/concerti-ricerca?artista={q}"
 _ZENROWS = "https://api.zenrows.com/v1/"
-_rl = RateLimiter(5.0)  # honor rockol's robots.txt Crawl-Delay: 5
+# robots.txt asks for Crawl-Delay: 5; the jitter makes it 5 to 8 s, never a fixed beat.
+_rl = RateLimiter(5.0, jitter=3.0)
 # Connect and read timeouts for the home path: a dead tunnel must fail fast.
 _HOME_TIMEOUT = (5, 20)
 _HOME_HEADERS = {

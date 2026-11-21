@@ -318,6 +318,40 @@ def test_rockol_is_off_with_no_transport_configured(monkeypatch):
     assert mod.RockolAdapter().enabled is True  # the home path alone is enough
 
 
+# --- rate limiting (shared) ---
+
+
+def test_rate_limiter_jitter_varies_the_spacing(monkeypatch):
+    import poghiamo.sources.base as base
+
+    clock = [100.0]
+    sleeps = []
+    monkeypatch.setattr(base.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(base.time, "sleep", lambda s: (sleeps.append(round(s, 3)), clock.__setitem__(0, clock[0] + s)))
+    # One draw per call, the first one included (it just has nothing to wait for).
+    extras = iter([1.0, 0.5, 2.75])
+    monkeypatch.setattr(base.random, "uniform", lambda a, b: next(extras))
+
+    rl = RateLimiter(5.0, jitter=3.0)
+    rl.wait()  # first call: nothing to wait for
+    rl.wait()
+    rl.wait()
+    assert sleeps == [5.5, 7.75]  # minimum spacing plus a different extra each time
+
+
+def test_rate_limiter_without_jitter_is_exact(monkeypatch):
+    import poghiamo.sources.base as base
+
+    clock = [100.0]
+    sleeps = []
+    monkeypatch.setattr(base.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(base.time, "sleep", lambda s: (sleeps.append(round(s, 3)), clock.__setitem__(0, clock[0] + s)))
+    rl = RateLimiter(1.0)
+    rl.wait()
+    rl.wait()
+    assert sleeps == [1.0]
+
+
 # --- region resolution (shared) ---
 
 
