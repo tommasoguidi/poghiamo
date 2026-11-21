@@ -122,11 +122,18 @@ def parse_artist_page(html: str, expected_name: str) -> list[ScrapedEvent]:
 
 
 def slug_keys(name: str) -> set[str]:
-    """The slug bases DICE could have built from this name. Apostrophes are
-    tried both dropped and as separators (Dov'è Liana: dove-liana, dov-e-liana)."""
-    plain = unicodedata.normalize("NFKD", name)
-    plain = "".join(c for c in plain if not unicodedata.combining(c)).lower()
-    variants = {plain, re.sub(r"['’`]", "", plain), plain.replace("&", " and ")}
+    """The slug bases DICE could have built from this name. Accented letters
+    are tried both transliterated and dropped (DICE has Dov'è Liana as
+    dov-liana), apostrophes both dropped and as separators."""
+    lower = name.lower()
+    plain = unicodedata.normalize("NFKD", lower)
+    plain = "".join(c for c in plain if not unicodedata.combining(c))
+    variants = {
+        plain,
+        re.sub(r"['’`]", "", plain),
+        plain.replace("&", " and "),
+        re.sub(r"[^\x00-\x7f]", "", lower),
+    }
     keys = {re.sub(r"[^a-z0-9]+", "-", v).strip("-") for v in variants}
     return {k for k in keys if k}
 

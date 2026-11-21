@@ -63,7 +63,8 @@ def test_parse_accepts_spellings_that_slugify_alike():
 
 
 def test_slug_keys_cover_dice_spellings():
-    assert {"dove-liana", "dov-e-liana"} <= dice.slug_keys("Dov'è Liana")
+    # dov-liana is how DICE really spells it (seen in its sitemap, 2026-11-20).
+    assert {"dov-liana", "dove-liana", "dov-e-liana"} <= dice.slug_keys("Dov'è Liana")
     assert dice.slug_keys("Ex-Otago") == {"ex-otago"}
     assert dice.slug_keys("43.Nove") == {"43-nove"}
     assert {"simon-and-garfunkel", "simon-garfunkel"} <= dice.slug_keys("Simon & Garfunkel")
