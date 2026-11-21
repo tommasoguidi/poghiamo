@@ -6,7 +6,7 @@ from pathlib import Path
 
 import requests
 from fastapi import BackgroundTasks, Depends, FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
@@ -411,6 +411,56 @@ def privacy(request: Request, user: User = Depends(get_current_user)):
     return templates.TemplateResponse(
         request=request, name="privacy.html", context={"user": user}
     )
+
+
+# --- INSTALLABLE APP (PWA) ---
+# Public routes: the login page links them too.
+
+_MANIFEST = {
+    "id": "/",
+    "name": "poghiamo",
+    "short_name": "poghiamo",
+    "description": "I concerti dei tuoi artisti, vicino a te.",
+    "lang": "it",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#0e0e11",
+    "theme_color": "#0e0e11",
+    "icons": [
+        {"src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+        {"src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+        {
+            "src": "/static/icons/icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable",
+        },
+    ],
+}
+
+
+@app.get("/manifest.webmanifest")
+def web_manifest():
+    return JSONResponse(_MANIFEST, media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+def service_worker():
+    # Served from the root, not /static/, because a service worker only
+    # controls the paths under its own URL. no-cache makes the browser check for
+    # a new version on every visit, so an updated worker is picked up at once.
+    return FileResponse(
+        _WEBAPP_DIR / "static" / "sw.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
+@app.get("/offline", response_class=HTMLResponse)
+def offline_page(request: Request):
+    # Saved by the service worker and shown when a page is not available offline.
+    return templates.TemplateResponse(request=request, name="offline.html", context={"user": None})
 
 
 # --- ARTISTS ---

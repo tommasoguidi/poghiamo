@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-md mx-auto px-6 pt-24 text-center space-y-4">
+    <img src="/static/icons/icon-192.png" alt="" class="w-20 h-20 mx-auto rounded-2xl">
+    <h1 class="text-xl font-semibold text-cream">Sei offline</h1>
+    <p class="text-sm text-zinc-400">
+        Questa pagina non è tra quelle salvate sul telefono. Senza rete puoi aprire
+        le pagine che hai già visitato: i concerti, il calendario e gli artisti.
+    </p>
+    <a href="/calendario" class="inline-block bg-primary hover:bg-rose-600 text-white text-sm font-semibold px-5 py-2.5 rounded-xl active:scale-95 transition-all">
+        Apri il calendario
+    </a>
+</div>
+{% endblock %}

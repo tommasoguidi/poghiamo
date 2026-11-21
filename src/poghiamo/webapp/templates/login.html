@@ -52,4 +52,9 @@
 
     </div>
 </div>
+<script>
+// Logged out (or never in): drop the pages saved for offline reading, so the
+// next account on this device never sees the previous one's calendar.
+if ("caches" in window) { caches.delete("poghiamo-pages"); }
+</script>
 {% endblock %}

@@ -6,6 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>poghiamo</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <!-- Installable as an app (PWA): home-screen icon, full screen, offline reading. -->
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+    <meta name="theme-color" content="#0e0e11">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="poghiamo">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
     {% if tailwind_dev %}
     <!-- DEV: Tailwind CDN (run `npm run watch:css` instead to use the link below) -->
     <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
@@ -33,6 +40,11 @@
     {% endif %}
 </head>
 <body class="bg-background text-cream min-h-screen font-sans{% if user %} pb-28 md:pb-0{% endif %}">
+
+<div id="offline-banner" class="hidden sticky top-0 z-50 bg-amber-500 text-black text-xs font-semibold text-center px-4 py-1.5"
+     style="padding-top: max(0.375rem, env(safe-area-inset-top));">
+    Sei offline: stai vedendo l'ultima versione salvata.
+</div>
 
 {% if user %}
     {% set p = request.url.path %}
@@ -90,5 +102,21 @@
     <a href="/privacy" class="text-xs text-zinc-500 hover:text-zinc-300 underline underline-offset-4">Privacy</a>
 </footer>
 
+<script>
+(function () {
+    // Offline reading (see /sw.js); a browser without service workers just
+    // gets the plain site.
+    if ("serviceWorker" in navigator) {
+        window.addEventListener("load", function () {
+            navigator.serviceWorker.register("/sw.js").catch(function () {});
+        });
+    }
+    var banner = document.getElementById("offline-banner");
+    function sync() { banner.classList.toggle("hidden", navigator.onLine); }
+    window.addEventListener("online", sync);
+    window.addEventListener("offline", sync);
+    sync();
+})();
+</script>
 </body>
 </html>
