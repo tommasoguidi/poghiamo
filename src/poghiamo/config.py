@@ -29,8 +29,13 @@ BACKUP_KEEP: int = int(os.getenv("BACKUP_KEEP", 14))
 SCAN_INTERVAL_DAYS: int = int(os.getenv("SCAN_INTERVAL_DAYS", 7))
 # Per-source global timeout (seconds) inside a single artist scan.
 SOURCE_TIMEOUT_SECONDS: int = int(os.getenv("SOURCE_TIMEOUT_SECONDS", 25))
-# How many artists to scan per scheduler tick (spacing to be polite to sources).
-SCAN_BATCH_SIZE: int = int(os.getenv("SCAN_BATCH_SIZE", 20))
+# Only the scheduler talks to the event sources, one artist at a time, in two
+# lanes. New lane: an artist that was never scanned (just added) is picked up
+# within this many seconds. Refresh lane: one artist whose SCAN_INTERVAL_DAYS
+# ran out is rescanned every this many minutes, so artists added together do
+# not come due, and hit the sources, together.
+NEW_ARTIST_POLL_SECONDS: int = int(os.getenv("NEW_ARTIST_POLL_SECONDS", 10))
+REFRESH_EVERY_MINUTES: int = int(os.getenv("REFRESH_EVERY_MINUTES", 5))
 # Future events unseen for this many days get flagged "da ricontrollare".
 EVENT_STALE_DAYS: int = int(os.getenv("EVENT_STALE_DAYS", 7))
 # Ticketmaster Discovery API key; the adapter disables itself when empty.

@@ -36,6 +36,8 @@
         <ul class="space-y-3">
             {% for e in events %}{% include "_event_card.html" %}{% endfor %}
         </ul>
+        {% elif artist.last_scanned_at is none %}
+        <p class="text-sm text-zinc-500 py-6">Sto cercando le date nelle fonti: ricarica la pagina tra qualche secondo.</p>
         {% else %}
         <p class="text-sm text-zinc-500 py-6">Nessuna data in programma trovata dalle fonti.</p>
         {% endif %}

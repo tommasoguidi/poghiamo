@@ -111,12 +111,12 @@ def scan_artist(db, artist: Artist) -> dict:
 def scan_artist_by_id(artist_id: int) -> dict | None:
     """Scan one artist in a fresh DB session, committing on success.
 
-    Self-contained so the same call serves both entry points: a web
-    BackgroundTask fired the moment a brand-new artist is added, and each step of
-    the scheduler's periodic sweep. It owns its session and never lets a failure
-    escape; on error it rolls back, so last_scanned_at stays untouched and the
-    sweep picks the artist up again later. Returns the per-source summary, or None
-    if the artist is gone or the scan failed."""
+    Called only by the scheduler (both its lanes), so a single process talks to
+    the sources and the per-adapter rate limits hold globally. It owns its
+    session and never lets a failure escape; on error it rolls back, so
+    last_scanned_at stays untouched and the artist is picked up again later.
+    Returns the per-source summary, or None if the artist is gone or the scan
+    failed."""
     from poghiamo.database.engine import SessionLocal
 
     db = SessionLocal()
@@ -240,6 +240,18 @@ def _upsert_events(db, artist: Artist, scraped: list) -> None:
             src.last_seen_at = now
             src.ticket_url = ev.ticket_url or src.ticket_url
         touched[key] = src
+
+
+def new_artists_to_scan(db, limit: int) -> list[Artist]:
+    """Followed artists never scanned yet (just added), longest waiting first."""
+    followed_ids = select(Follow.artist_id).where(Follow.state == "active").distinct()
+    rows = db.execute(
+        select(Artist)
+        .where(Artist.id.in_(followed_ids), Artist.last_scanned_at.is_(None))
+        .order_by(Artist.created_at.asc(), Artist.id.asc())
+        .limit(limit)
+    ).scalars().all()
+    return list(rows)
 
 
 def artists_due_for_scan(db, interval_days: int, limit: int) -> list[Artist]:
