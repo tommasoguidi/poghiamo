@@ -40,6 +40,9 @@ SITEMAP_SOURCE = "dice_sitemap"  # ScanLog.source of the slug-resolution crawls
 RECRAWL_DAYS = 30  # artists still unmatched are retried this often
 MIN_GAP_HOURS = 20  # a newly followed artist waits at most for the next night
 MAX_CANDIDATES = 3  # homonyms on DICE: keep a few, the page check sorts them out
+# A last_scanned_at older than any real scan: puts a newly matched artist at the
+# head of the refresh lane (see resolve_slugs).
+REFRESH_FIRST = dt.datetime(2000, 1, 1)
 
 
 class DiceAdapter(SourceAdapter):
@@ -229,8 +232,12 @@ def resolve_slugs(
         artist = db.get(Artist, artist_id)
         if artist is not None and artist.dice_slug is None:
             artist.dice_slug = ",".join(slugs)
-            # Due right away, so its DICE dates do not wait for the weekly cadence.
-            artist.last_scanned_at = None
+            # Due right away, so its DICE dates do not wait for the weekly
+            # cadence, but through the refresh lane (oldest first) rather than
+            # the new-artist lane, which NULL would mean: a crawl can match
+            # dozens of artists at once and they must not burst the sources.
+            if artist.last_scanned_at is not None:
+                artist.last_scanned_at = REFRESH_FIRST
     db.add(ScanLog(source=SITEMAP_SOURCE, status="ok", found=len(matches), ran_at=now))
     db.commit()
     return {"pending": len(pending_ids), "matched": len(matches)}

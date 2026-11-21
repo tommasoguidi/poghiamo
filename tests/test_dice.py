@@ -178,14 +178,22 @@ def test_nothing_to_do_without_unmatched_artists(db):
 def test_first_crawl_matches_and_makes_the_artist_due(db):
     user = make_user(db)
     rares = _follow(db, user, "Rares", 10)
-    crawl, calls = _crawl("rares-4bwm", "someone-else-1234")
+    newcomer = _follow(db, user, "Fenoaltea", 0)
+    newcomer.last_scanned_at = None  # just added, waiting for its first scan
+    db.commit()
+    crawl, calls = _crawl("rares-4bwm", "fenoaltea-679l2", "someone-else-1234")
 
-    assert dice.resolve_slugs(db, now=NOW, crawl=crawl) == {"pending": 1, "matched": 1}
+    assert dice.resolve_slugs(db, now=NOW, crawl=crawl) == {"pending": 2, "matched": 2}
     db.refresh(rares)
+    db.refresh(newcomer)
     assert rares.dice_slug == "rares-4bwm"
-    assert rares.last_scanned_at is None  # picked up by the next sweep
+    # Due at the head of the refresh lane, not in the new-artist lane (NULL),
+    # so a big batch of matches cannot burst the sources.
+    assert rares.last_scanned_at == dice.REFRESH_FIRST
+    assert newcomer.dice_slug == "fenoaltea-679l2"
+    assert newcomer.last_scanned_at is None  # still a newcomer, untouched
     log = db.query(ScanLog).one()
-    assert (log.source, log.status, log.found) == ("dice_sitemap", "ok", 1)
+    assert (log.source, log.status, log.found) == ("dice_sitemap", "ok", 2)
 
 
 def test_crawl_cadence(db):
