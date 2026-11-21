@@ -12,8 +12,9 @@ from dataclasses import dataclass
 from pydantic import BaseModel, field_validator
 
 from poghiamo import geo
+from poghiamo.config import SCRAPER_USER_AGENT
 
-_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+_UA = SCRAPER_USER_AGENT
 
 
 @dataclass(frozen=True)

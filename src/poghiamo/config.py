@@ -35,6 +35,15 @@ SCAN_BATCH_SIZE: int = int(os.getenv("SCAN_BATCH_SIZE", 20))
 EVENT_STALE_DAYS: int = int(os.getenv("EVENT_STALE_DAYS", 7))
 # Ticketmaster Discovery API key; the adapter disables itself when empty.
 TICKETMASTER_API_KEY: str = os.getenv("TICKETMASTER_API_KEY", "")
+# Browser User-Agent sent to the scraped sites. Keep it a recent Chrome release:
+# Cloudflare challenges stale versions (rockol answered 403 to Chrome 126 from
+# the home line in November 2026 and 200 to Chrome 141), and a challenge shows
+# up as "blocked" on the admin source-health card. Override it in .env.
+SCRAPER_USER_AGENT: str = os.getenv(
+    "SCRAPER_USER_AGENT",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/141.0.0.0 Safari/537.36",
+)
 # Forward proxy on the always-on home PC, reached over the WireGuard tunnel
 # (e.g. http://10.77.0.2:8888). When set, rockol is fetched through it with a
 # plain GET, so the request exits from the residential line, and ZenRows becomes
