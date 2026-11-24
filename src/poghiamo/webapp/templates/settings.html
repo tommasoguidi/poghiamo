@@ -1,8 +1,12 @@
 {% extends "base.html" %}
 
+{% block header %}
+<h1 class="text-2xl font-bold text-cream mb-1">Impostazioni</h1>
+<p class="text-sm text-zinc-400">Collegato come <span class="text-cream font-medium">{{ user.username }}</span></p>
+{% endblock %}
+
 {% block content %}
-<div class="max-w-3xl mx-auto px-6 py-16 space-y-8">
-    <h1 class="text-2xl font-bold text-cream">Impostazioni</h1>
+<div class="max-w-3xl mx-auto px-6 pt-6 space-y-8">
 
     {% if error %}
     <div class="px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">
@@ -177,6 +181,15 @@
         <form action="/logout" method="POST">
             <button type="submit" class="bg-zinc-800 hover:bg-zinc-700 text-cream text-sm font-semibold px-5 py-2.5 rounded-xl active:scale-95 transition-all">Esci</button>
         </form>
+    </div>
+
+    {# The only link to the privacy notice inside the app (signup has the other). #}
+    <div class="bg-card rounded-2xl p-6 border border-zinc-800 flex items-center justify-between gap-4">
+        <div>
+            <h2 class="text-base font-semibold text-cream">Privacy</h2>
+            <p class="text-sm text-zinc-400">Quali dati teniamo, dove e perché.</p>
+        </div>
+        <a href="/privacy" class="bg-zinc-800 hover:bg-zinc-700 text-cream text-sm font-semibold px-5 py-2.5 rounded-xl active:scale-95 transition-all shrink-0">Leggi</a>
     </div>
 
     <div class="bg-card rounded-2xl p-8 border border-red-900/40">

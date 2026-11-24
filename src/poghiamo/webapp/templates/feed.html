@@ -1,16 +1,20 @@
 {% extends "base.html" %}
 
+{% block header %}
+<div class="flex items-center justify-between gap-4">
+    <h1 class="text-2xl font-bold text-cream">Concerti</h1>
+    <button type="button" id="tour-create" onclick="openCreate()"
+            class="bg-primary hover:bg-rose-600 text-white text-sm font-semibold px-4 py-2 rounded-xl active:scale-95 transition-all shrink-0">
+        + Crea evento
+    </button>
+</div>
+{% endblock %}
+
 {% block content %}
 {# On Concerti the artist name is not a link to the artist page (by design). #}
 {% set link_artist = false %}
-<div class="max-w-3xl mx-auto px-6 py-12 space-y-6">
-    <div class="flex items-center justify-between gap-4">
-        <h1 class="text-2xl font-bold text-cream">In zona</h1>
-        <button type="button" id="tour-create" onclick="openCreate()"
-                class="bg-primary hover:bg-rose-600 text-white text-sm font-semibold px-4 py-2 rounded-xl active:scale-95 transition-all shrink-0">
-            + Crea evento
-        </button>
-    </div>
+<div class="max-w-3xl mx-auto px-6 pt-6 space-y-6">
+    <h2 class="text-sm font-semibold text-zinc-500 uppercase tracking-wide">In zona</h2>
 
     {% if in_zona %}
     <ul class="space-y-3">

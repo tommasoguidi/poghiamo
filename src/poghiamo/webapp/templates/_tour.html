@@ -104,6 +104,10 @@
     var nextBtn = document.getElementById("tour-next");
     nextBtn.textContent = step.next ? "Avanti" : "Fine";
     bubble.classList.remove("hidden");
+    if (target && target.getBoundingClientRect().top > window.innerHeight / 2) {
+        bubble.style.top = "calc(env(safe-area-inset-top) + 1rem)";
+        bubble.style.bottom = "auto";
+    }
 
     // Finishing and skipping both count as done. Wait for the server before
     // leaving the page (keepalive covers a slow answer); offline, the tour

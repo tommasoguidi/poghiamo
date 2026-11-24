@@ -1,4 +1,5 @@
 # webapp/app.py
+import hashlib
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -60,8 +61,20 @@ app.mount("/static", StaticFiles(directory=str(_WEBAPP_DIR / "static")), name="s
 templates = Jinja2Templates(directory=str(_WEBAPP_DIR / "templates"))
 # Use CDN in dev (no built tailwind.css), pre-built CSS in production (Docker)
 _tailwind_css = _WEBAPP_DIR / "static" / "tailwind.css"
+
+
+def asset_version(path: Path) -> str:
+    """Short content hash for cache-busting a static file's URL. The CSS is
+    served without Cache-Control, so browsers may reuse a stale copy for hours
+    after a deploy that adds new classes; a new ?v= makes them fetch it."""
+    if not path.exists():
+        return "dev"
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+
+
 templates.env.globals.update(
     tailwind_dev=not _tailwind_css.exists(),
+    css_version=asset_version(_tailwind_css),
     webapp_url=WEBAPP_URL,
 )
 

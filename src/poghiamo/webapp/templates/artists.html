@@ -1,5 +1,26 @@
 {% extends "base.html" %}
 
+{% block header %}
+<h1 class="text-2xl font-bold text-cream">Artisti che <span class="text-primary">amo</span></h1>
+
+{# One box for both jobs: it filters the followed list as you type and, from
+   two letters, also asks Deezer (through the server) for artists not followed
+   yet, shown in their own section below the list. On phones it is docked right
+   above the tab bar, within thumb reach; on desktop it sits in this header. #}
+<div id="search-dock" class="fixed inset-x-0 z-40 bg-background border-t border-zinc-800 px-6 py-3 md:static md:z-auto md:bg-transparent md:border-0 md:p-0 md:mt-4"
+     style="bottom: var(--tabbar-h);">
+    <div id="tour-add" class="relative max-w-3xl mx-auto">
+        <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-400 pointer-events-none" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
+        </svg>
+        <input type="search" id="artist-search" placeholder="Cerca o aggiungi un artista…" autocomplete="off"
+               enterkeyhint="search" aria-label="Cerca tra i tuoi artisti o aggiungine uno"
+               class="block w-full pl-12 pr-4 py-3 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all">
+    </div>
+</div>
+{% endblock %}
+
 {% block content %}
 <style>
     /* The browser's own clear button is blue in Chrome: redraw it in the palette. */
@@ -11,21 +32,7 @@
         background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E") center / contain no-repeat;
     }
 </style>
-<div class="max-w-3xl mx-auto px-6 py-12 space-y-6">
-    <h1 class="text-2xl font-bold text-cream">Artisti che <span class="text-primary">amo</span></h1>
-
-    {# One box for both jobs: it filters the followed list as you type and, from
-       two letters, also asks Deezer (through the server) for artists not
-       followed yet, shown in their own section below the list. #}
-    <div id="tour-add" class="relative">
-        <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" viewBox="0 0 24 24"
-             fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-            <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
-        </svg>
-        <input type="search" id="artist-search" placeholder="Cerca o aggiungi un artista…" autocomplete="off"
-               enterkeyhint="search" aria-label="Cerca tra i tuoi artisti o aggiungine uno"
-               class="block w-full pl-11 pr-4 py-3 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all">
-    </div>
+<div class="max-w-3xl mx-auto px-6 pt-6 space-y-6">
 
     {% if follows %}
     <section class="space-y-3">
@@ -70,7 +77,7 @@
     </section>
     {% else %}
     <div id="followed-empty" class="text-center py-12 text-zinc-500 text-sm">
-        Non ami ancora nessun artista: cercane uno qui sopra per cominciare.
+        Non ami ancora nessun artista: cercane uno per cominciare.
     </div>
     {% endif %}
 
@@ -86,6 +93,7 @@
             <input type="hidden" name="image_url" id="add-image-url">
         </form>
     </section>
+    <div class="h-20 md:hidden" aria-hidden="true"></div>  {# room for the docked search bar #}
 </div>
 
 <script>
@@ -174,6 +182,7 @@ function isFollowed(r) {
         p.textContent = text;
         results.appendChild(p);
         section.classList.remove("hidden");
+        nearSearch();
     }
 
     // Followed artists are already in the list above, so only the others are
@@ -186,12 +195,22 @@ function isFollowed(r) {
             results.appendChild(btn);
         });
         if (!FOLLOWED_NAMES.has(normName(q))) {
-            const free = row("«" + q + "»", null, "+", "così com'è, se non è tra i risultati");
+            const free = row("«" + q + "»", null, "+", "così com'è");
             free.addEventListener("click", function () { submitAdd(q, null, null); });
             results.appendChild(free);
         }
         if (!results.children.length) { section.classList.add("hidden"); return; }
         section.classList.remove("hidden");
+        nearSearch();
+    }
+
+    // With the box docked at the bottom (phones), bring the results down to
+    // it: they are the last thing on the page.
+    const dock = document.getElementById("search-dock");
+    function nearSearch() {
+        if (getComputedStyle(dock).position === "fixed") {
+            window.scrollTo(0, document.documentElement.scrollHeight);
+        }
     }
 
     input.addEventListener("input", function () {
