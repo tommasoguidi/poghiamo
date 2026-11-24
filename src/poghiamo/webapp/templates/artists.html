@@ -1,21 +1,83 @@
 {% extends "base.html" %}
 
 {% block content %}
+<style>
+    /* The browser's own clear button is blue in Chrome: redraw it in the palette. */
+    #artist-search::-webkit-search-cancel-button {
+        -webkit-appearance: none;
+        width: 1rem;
+        height: 1rem;
+        cursor: pointer;
+        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E") center / contain no-repeat;
+    }
+</style>
 <div class="max-w-3xl mx-auto px-6 py-12 space-y-6">
-    <div class="flex items-center justify-between gap-4">
-        <h1 class="text-2xl font-bold text-cream">Artisti che <span class="text-primary">amo</span></h1>
-        <button type="button" id="tour-add" onclick="toggleAdd()"
-                class="bg-primary hover:bg-rose-600 text-white text-sm font-semibold px-4 py-2 rounded-xl active:scale-95 transition-all shrink-0">
-            + Aggiungi
-        </button>
+    <h1 class="text-2xl font-bold text-cream">Artisti che <span class="text-primary">amo</span></h1>
+
+    {# One box for both jobs: it filters the followed list as you type and, from
+       two letters, also asks Deezer (through the server) for artists not
+       followed yet, shown in their own section below the list. #}
+    <div id="tour-add" class="relative">
+        <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
+        </svg>
+        <input type="search" id="artist-search" placeholder="Cerca o aggiungi un artista…" autocomplete="off"
+               enterkeyhint="search" aria-label="Cerca tra i tuoi artisti o aggiungine uno"
+               class="block w-full pl-11 pr-4 py-3 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all">
     </div>
 
-    <!-- Add-search: hidden until the + button is pressed -->
-    <div id="add-panel" class="hidden bg-card rounded-2xl p-6 border border-zinc-800 relative">
-        <input type="text" id="artist-search" placeholder="Cerca un artista da seguire…" autocomplete="off"
-               class="block w-full px-4 py-3 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all">
-        <div id="suggestions" class="hidden absolute left-6 right-6 mt-2 bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden z-40 shadow-2xl"></div>
-        <p id="search-hint" class="hidden text-xs text-zinc-500 mt-2">
+    {% if follows %}
+    <section class="space-y-3">
+        <div class="flex items-center justify-between gap-3">
+            <h2 id="followed-label" class="text-xs font-semibold uppercase tracking-wide text-zinc-500">I tuoi artisti ({{ follows|length }})</h2>
+            <div class="flex items-center gap-1 text-xs shrink-0">
+                <button type="button" id="sort-name" onclick="cycleSort('name')" class="px-3 py-1.5 rounded-full text-zinc-400 hover:text-cream transition-colors">Nome</button>
+                <button type="button" id="sort-followed" onclick="cycleSort('followed')" class="px-3 py-1.5 rounded-full text-zinc-400 hover:text-cream transition-colors">Aggiunti</button>
+            </div>
+        </div>
+
+        <ul class="space-y-3" id="followed-list">
+            {% for f in follows %}
+            <li class="flex items-center justify-between gap-4 bg-card border border-zinc-800 rounded-xl px-4 py-3 transition-shadow"
+                data-id="{{ f.artist.id }}" data-name="{{ f.artist.name|lower }}"
+                data-followed="{{ f.created_at.isoformat() if f.created_at else '' }}">
+                <div class="flex items-center gap-3 min-w-0">
+                    {% if f.artist.image_url %}
+                    <img src="{{ f.artist.image_url }}" alt="" class="w-10 h-10 rounded-full object-cover bg-zinc-800">
+                    {% else %}
+                    <div class="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 font-bold">
+                        {{ f.artist.name[0]|upper }}
+                    </div>
+                    {% endif %}
+                    <div class="min-w-0">
+                        <a href="/artists/{{ f.artist.id }}" class="text-cream font-medium truncate hover:text-primary transition-colors block">{{ f.artist.name }}</a>
+                        <div class="text-xs text-zinc-500" data-artist-id="{{ f.artist.id }}"
+                             data-status="{{ f.artist.resolution_status }}">
+                            {% if f.artist.resolution_status == 'pending' %}identificazione in corso…
+                            {% elif f.artist.resolution_status == 'unmatched' %}da verificare
+                            {% elif f.artist.country %}{{ f.artist.country }}{% endif %}
+                        </div>
+                    </div>
+                </div>
+                <form action="/artists/{{ f.artist.id }}/unfollow" method="POST" class="shrink-0">
+                    <button type="submit" class="text-xs text-zinc-400 hover:text-red-400 transition-colors px-2 py-2 -mr-2">Non seguire più</button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        <p id="followed-none" class="hidden text-sm text-zinc-500">Nessuno dei tuoi artisti si chiama così.</p>
+    </section>
+    {% else %}
+    <div id="followed-empty" class="text-center py-12 text-zinc-500 text-sm">
+        Non ami ancora nessun artista: cercane uno qui sopra per cominciare.
+    </div>
+    {% endif %}
+
+    <section id="add-section" class="hidden space-y-3">
+        <h2 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Da aggiungere</h2>
+        <div id="add-results" class="bg-card border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-800"></div>
+        <p id="search-hint" class="hidden text-xs text-zinc-500">
             Ricerca esterna non disponibile ora: puoi comunque aggiungere il nome così com'è.
         </p>
         <form id="add-form" action="/artists/add" method="POST" class="hidden">
@@ -23,75 +85,44 @@
             <input type="hidden" name="deezer_id" id="add-deezer-id">
             <input type="hidden" name="image_url" id="add-image-url">
         </form>
-    </div>
-
-    {% if follows %}
-    <div class="flex items-center gap-3">
-        <input type="text" id="filter-followed" placeholder="Filtra…" autocomplete="off"
-               class="flex-1 min-w-0 px-4 py-2 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-sm">
-        <div class="flex items-center gap-1 text-xs shrink-0">
-            <button type="button" id="sort-name" onclick="cycleSort('name')" class="px-3 py-1.5 rounded-full text-zinc-400 hover:text-cream transition-colors">Nome</button>
-            <button type="button" id="sort-followed" onclick="cycleSort('followed')" class="px-3 py-1.5 rounded-full text-zinc-400 hover:text-cream transition-colors">Aggiunti</button>
-        </div>
-    </div>
-
-    <ul class="space-y-3" id="followed-list">
-        {% for f in follows %}
-        <li class="flex items-center justify-between gap-4 bg-card border border-zinc-800 rounded-xl px-4 py-3"
-            data-name="{{ f.artist.name|lower }}" data-followed="{{ f.created_at.isoformat() if f.created_at else '' }}">
-            <div class="flex items-center gap-3 min-w-0">
-                {% if f.artist.image_url %}
-                <img src="{{ f.artist.image_url }}" alt="" class="w-10 h-10 rounded-full object-cover bg-zinc-800">
-                {% else %}
-                <div class="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 font-bold">
-                    {{ f.artist.name[0]|upper }}
-                </div>
-                {% endif %}
-                <div class="min-w-0">
-                    <a href="/artists/{{ f.artist.id }}" class="text-cream font-medium truncate hover:text-primary transition-colors block">{{ f.artist.name }}</a>
-                    <div class="text-xs text-zinc-500" data-artist-id="{{ f.artist.id }}"
-                         data-status="{{ f.artist.resolution_status }}">
-                        {% if f.artist.resolution_status == 'pending' %}identificazione in corso…
-                        {% elif f.artist.resolution_status == 'unmatched' %}da verificare
-                        {% elif f.artist.country %}{{ f.artist.country }}{% endif %}
-                    </div>
-                </div>
-            </div>
-            <form action="/artists/{{ f.artist.id }}/unfollow" method="POST" class="shrink-0">
-                <button type="submit" class="text-xs text-zinc-400 hover:text-red-400 transition-colors px-2 py-2 -mr-2">Non seguire più</button>
-            </form>
-        </li>
-        {% endfor %}
-    </ul>
-    {% else %}
-    <div class="text-center py-12 text-zinc-500 text-sm">
-        Non ami ancora nessun artista. Tocca <span class="text-primary">+ Aggiungi</span> per cominciare.
-    </div>
-    {% endif %}
+    </section>
 </div>
 
 <script>
 const FOLLOWED_DEEZER = new Set({{ followed.deezer | tojson }});
 const FOLLOWED_NAMES = new Set({{ followed.names | tojson }});
 function normName(s) {
-    return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+    return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 function isFollowed(r) {
     return (r.deezer_id != null && FOLLOWED_DEEZER.has(r.deezer_id)) || FOLLOWED_NAMES.has(normName(r.name));
 }
 
-function toggleAdd() {
-    var p = document.getElementById("add-panel");
-    p.classList.toggle("hidden");
-    if (!p.classList.contains("hidden")) document.getElementById("artist-search").focus();
-}
-
 (function () {
     const input = document.getElementById("artist-search");
-    const box = document.getElementById("suggestions");
+    const list = document.getElementById("followed-list");  // absent with no follows
+    const label = document.getElementById("followed-label");
+    const none = document.getElementById("followed-none");
+    const empty = document.getElementById("followed-empty");
+    const section = document.getElementById("add-section");
+    const results = document.getElementById("add-results");
     const hint = document.getElementById("search-hint");
     const form = document.getElementById("add-form");
+    const total = list ? list.children.length : 0;
     let timer = null;
+
+    function filterFollowed(q) {
+        if (empty) empty.classList.toggle("hidden", !!q);  // make room for the results
+        if (!list) return;
+        let shown = 0;
+        Array.from(list.children).forEach(function (li) {
+            const hit = !q || normName(li.dataset.name).indexOf(q) !== -1;
+            li.style.display = hit ? "" : "none";
+            if (hit) shown++;
+        });
+        label.textContent = "I tuoi artisti (" + (q ? shown + " di " + total : total) + ")";
+        none.classList.toggle("hidden", !q || shown > 0);
+    }
 
     function submitAdd(name, deezerId, imageUrl) {
         document.getElementById("add-name").value = name;
@@ -100,59 +131,113 @@ function toggleAdd() {
         form.submit();
     }
 
-    function render(results, query) {
-        box.innerHTML = "";
-        results.forEach(function (r) {
-            const followed = isFollowed(r);
-            const btn = document.createElement("button");
-            btn.type = "button";
-            btn.className = "w-full flex items-center gap-3 px-4 py-2.5 text-left " + (followed ? "opacity-50 cursor-default" : "hover:bg-zinc-800");
-            const img = document.createElement("img");
-            img.className = "w-8 h-8 rounded-full object-cover bg-zinc-800";
-            if (r.image_url) img.src = r.image_url;
-            const span = document.createElement("span");
-            span.className = "text-sm text-cream flex-1";
-            span.textContent = r.name;
-            btn.appendChild(img);
-            btn.appendChild(span);
-            if (followed) {
-                const tag = document.createElement("span");
-                tag.className = "text-[10px] uppercase tracking-wide text-emerald-400";
-                tag.textContent = "già seguito";
-                btn.appendChild(tag);
-            } else {
-                btn.addEventListener("click", function () { submitAdd(r.name, r.deezer_id, r.image_url); });
-            }
-            box.appendChild(btn);
+    // A result row: avatar (or a placeholder), the name, and a "+ Segui" pill.
+    // The whole row is the button, for a comfortable tap target.
+    function row(text, imageUrl, placeholder, subtitle) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-zinc-800 transition-colors";
+        let avatar;
+        if (imageUrl) {
+            avatar = document.createElement("img");
+            avatar.src = imageUrl;
+            avatar.alt = "";
+            avatar.className = "w-10 h-10 rounded-full object-cover bg-zinc-800 shrink-0";
+        } else {
+            avatar = document.createElement("div");
+            avatar.className = "w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 font-bold shrink-0";
+            avatar.textContent = placeholder;
+        }
+        const name = document.createElement("span");
+        name.className = "flex-1 min-w-0";
+        const main = document.createElement("span");
+        main.className = "block truncate text-sm text-cream";
+        main.textContent = text;
+        name.appendChild(main);
+        if (subtitle) {
+            const sub = document.createElement("span");
+            sub.className = "block truncate text-xs text-zinc-500";
+            sub.textContent = subtitle;
+            name.appendChild(sub);
+        }
+        const pill = document.createElement("span");
+        pill.className = "shrink-0 text-xs font-semibold text-primary border border-primary/40 rounded-full px-3 py-1";
+        pill.textContent = "+ Segui";
+        btn.append(avatar, name, pill);
+        return btn;
+    }
+
+    function showMessage(text) {
+        results.innerHTML = "";
+        const p = document.createElement("p");
+        p.className = "px-4 py-3 text-sm text-zinc-500";
+        p.textContent = text;
+        results.appendChild(p);
+        section.classList.remove("hidden");
+    }
+
+    // Followed artists are already in the list above, so only the others are
+    // offered here, plus the free-text add for names Deezer doesn't know.
+    function render(found, q) {
+        results.innerHTML = "";
+        found.filter(function (r) { return !isFollowed(r); }).forEach(function (r) {
+            const btn = row(r.name, r.image_url, r.name.charAt(0).toUpperCase(), null);
+            btn.addEventListener("click", function () { submitAdd(r.name, r.deezer_id, r.image_url); });
+            results.appendChild(btn);
         });
-        const free = document.createElement("button");
-        free.type = "button";
-        free.className = "w-full px-4 py-2.5 hover:bg-zinc-800 text-left text-sm text-zinc-400";
-        free.textContent = "Aggiungi «" + query + "» così com'è";
-        free.addEventListener("click", function () { submitAdd(query, null, null); });
-        box.appendChild(free);
-        box.classList.remove("hidden");
+        if (!FOLLOWED_NAMES.has(normName(q))) {
+            const free = row("«" + q + "»", null, "+", "così com'è, se non è tra i risultati");
+            free.addEventListener("click", function () { submitAdd(q, null, null); });
+            results.appendChild(free);
+        }
+        if (!results.children.length) { section.classList.add("hidden"); return; }
+        section.classList.remove("hidden");
     }
 
     input.addEventListener("input", function () {
         clearTimeout(timer);
         const q = input.value.trim();
+        filterFollowed(normName(q));
         hint.classList.add("hidden");
-        if (q.length < 2) { box.classList.add("hidden"); return; }
+        if (q.length < 2) { section.classList.add("hidden"); return; }
+        if (section.classList.contains("hidden")) showMessage("Cerco…");
         timer = setTimeout(function () {
             fetch("/api/artists/search?q=" + encodeURIComponent(q))
                 .then(function (r) { return r.json(); })
                 .then(function (data) {
+                    if (input.value.trim() !== q) return;  // a newer search is on its way
                     if (data.degraded) hint.classList.remove("hidden");
                     render(data.results || [], q);
                 })
-                .catch(function () { hint.classList.remove("hidden"); render([], q); });
+                .catch(function () {
+                    if (input.value.trim() !== q) return;
+                    hint.classList.remove("hidden");
+                    render([], q);
+                });
         }, 300);
     });
 
-    document.addEventListener("click", function (e) {
-        if (!box.contains(e.target) && e.target !== input) box.classList.add("hidden");
+    // Enter just closes the phone keyboard so the results are visible; adding
+    // always takes an explicit tap on a row.
+    input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); input.blur(); }
     });
+
+    // Back from adding (?added=<id>): point at the new artist, then drop the
+    // parameter so a reload doesn't do it again.
+    const params = new URLSearchParams(location.search);
+    const added = params.get("added");
+    if (added) {
+        params.delete("added");
+        const rest = params.toString();
+        history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
+        const li = list && list.querySelector('[data-id="' + CSS.escape(added) + '"]');
+        if (li) {
+            li.classList.add("ring-2", "ring-primary");
+            li.scrollIntoView({ block: "center" });
+            setTimeout(function () { li.classList.remove("ring-2", "ring-primary"); }, 2500);
+        }
+    }
 
     // Live status updates while any artist is still "pending". Bounded: if
     // MusicBrainz stays down, stop after ~1 min instead of spinning forever;
@@ -186,18 +271,6 @@ function toggleAdd() {
             .catch(function () { setTimeout(pollStatuses, 8000); });
     }
     setTimeout(pollStatuses, 2500);
-})();
-
-// Client-side filter of the followed list by name.
-(function () {
-    var input = document.getElementById("filter-followed");
-    if (!input) return;
-    input.addEventListener("input", function () {
-        var q = input.value.trim().toLowerCase();
-        document.querySelectorAll("#followed-list > li").forEach(function (li) {
-            li.style.display = (!q || li.dataset.name.indexOf(q) !== -1) ? "" : "none";
-        });
-    });
 })();
 
 // Tri-state client-side sort: each button cycles off -> asc -> desc -> off.

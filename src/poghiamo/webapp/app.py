@@ -596,7 +596,8 @@ def add_artist(
         follow.state = "active"
         follow.removed_at = None
     db.commit()
-    return RedirectResponse("/artists", status_code=303)
+    # The page points at the artist just added (the search box is empty again).
+    return RedirectResponse(f"/artists?added={artist.id}", status_code=303)
 
 
 @app.post("/artists/{artist_id}/unfollow")

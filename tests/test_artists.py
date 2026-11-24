@@ -80,7 +80,22 @@ def test_add_artist_creates_follow_and_enriches_async(client, db):
 
     follow = db.query(Follow).one()
     assert follow.state == "active" and follow.source == "manual"
+    # Back on the list, pointed at the artist just added.
+    assert resp.headers["location"] == f"/artists?added={artist.id}"
     assert "Faccianuvola" in client.get("/artists").text
+
+
+def test_artists_page_has_one_search_box_for_filtering_and_adding(client, db):
+    _login_user(client, db)
+    page = client.get("/artists").text
+    assert page.count('type="search"') == 1
+    assert "Non ami ancora nessun artista" in page  # empty state points at the box
+    assert 'id="add-section"' in page  # "Da aggiungere" results, below the list
+
+    client.post("/artists/add", data={"name": "Faccianuvola"}, follow_redirects=False)
+    page = client.get("/artists").text
+    assert page.count('type="search"') == 1
+    assert "I tuoi artisti (1)" in page
 
 
 def test_add_dedupes_across_users_and_free_text(client, db):
