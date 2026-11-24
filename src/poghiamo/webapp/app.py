@@ -6,7 +6,7 @@ from pathlib import Path
 
 import requests
 from fastapi import BackgroundTasks, Depends, FastAPI, Form, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
@@ -89,18 +89,10 @@ async def handle_redirect_to_login(request: Request, exc: RedirectToLogin):
     return RedirectResponse("/login", status_code=303)
 
 
-def _landing_url(db, user) -> str:
-    """Where a just-logged-in user lands: onboarding for a brand-new account
-    (no zones, no follows), otherwise the Calendario home."""
-    has_follows = (
-        db.query(Follow)
-        .filter(Follow.user_id == user.id, Follow.state == "active")
-        .first()
-        is not None
-    )
-    if not has_follows and not (user.regions or user.provinces):
-        return "/settings?tour=1"
-    return "/calendario"
+def _landing_url(user) -> str:
+    """Where a just-logged-in user lands: the guided tour until they have
+    finished or skipped it once, otherwise the Calendario home."""
+    return "/settings?tour=1" if user.tour_done_at is None else "/calendario"
 
 
 # --- AUTH ROUTES ---
@@ -134,7 +126,7 @@ def login(
             context={"error": "Nome utente o password non validi"},
         )
     request.session["user_id"] = user.id
-    return RedirectResponse(_landing_url(db, user), status_code=303)
+    return RedirectResponse(_landing_url(user), status_code=303)
 
 
 @app.get("/signup", response_class=HTMLResponse)
@@ -210,8 +202,18 @@ def signup(
     db.commit()
 
     request.session["user_id"] = user.id
-    # Brand-new account: start the guided tour (zones → artists → concerti).
-    return RedirectResponse("/settings?tour=1", status_code=303)
+    # Brand-new account: start the guided tour (zones, artists, concerti, calendario).
+    return RedirectResponse(_landing_url(user), status_code=303)
+
+
+@app.post("/tour/done")
+def tour_done(db: Session = Depends(get_db), user: User = Depends(require_user)):
+    """The tour was finished or skipped: stop starting it at login. Replaying it
+    from Impostazioni keeps the first date."""
+    if user.tour_done_at is None:
+        user.tour_done_at = feed.now_utc_naive()
+        db.commit()
+    return Response(status_code=204)
 
 
 @app.post("/logout")

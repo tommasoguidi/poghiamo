@@ -199,7 +199,7 @@ def test_new_user_lands_on_onboarding(client, db):
 
 def test_returning_user_lands_on_calendario(client, db):
     user = make_user(db, username="alice", password="testpass123")
-    user.regions = ["Lombardia"]
+    user.tour_done_at = dt.datetime(2026, 11, 1)
     db.commit()
     resp = login(client, "alice", "testpass123")
     assert resp.headers["location"] == "/calendario"

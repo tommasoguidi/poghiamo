@@ -94,6 +94,23 @@ def _run_migrations():
                     )
                 )
 
+    # Migration 6 (guided tour): remember who has seen it. Before this column the
+    # tour started for accounts with no zones and no follows, so anyone already
+    # set up counts as done and only untouched accounts still get it.
+    if "users" in inspector.get_table_names():
+        columns = [c["name"] for c in inspector.get_columns("users")]
+        if "tour_done_at" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN tour_done_at DATETIME"))
+                conn.execute(
+                    text(
+                        "UPDATE users SET tour_done_at = CURRENT_TIMESTAMP "
+                        "WHERE regions IS NOT NULL OR provinces IS NOT NULL OR EXISTS ("
+                        "SELECT 1 FROM follows WHERE follows.user_id = users.id "
+                        "AND follows.state = 'active')"
+                    )
+                )
+
 
 def seed_admin():
     """Bootstrap the admin account from ADMIN_USERNAME / ADMIN_PASSWORD.

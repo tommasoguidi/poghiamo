@@ -1,9 +1,9 @@
-{# First-login guided tour. Purely client-side: activates only when the URL
-   carries ?tour=N and the current page matches that step. The dim is drawn by
-   the target's OWN box-shadow (a huge spread), so there is no overlay element
-   to trap clicks: a box-shadow never captures pointer events, and the target
-   paints above its own shadow, so it stays bright and fully interactive. A
-   fixed bubble carries the copy, step counter, Skip and Next. #}
+{# Guided tour, started at login until the user finishes or skips it once
+   (users.tour_done_at, set by POST /tour/done) and replayable from Impostazioni.
+   ?tour=N seeds the step, sessionStorage carries it across pages. Each step
+   lives on one page: a pulsing ring marks its element and a fixed bubble
+   carries the copy, step counter, Salta and Avanti. Nothing is overlaid, so
+   the page stays fully usable while the tour is on. #}
 <style>
     /* A pulsating border on the step's element. Solid outline is always present
        (so it shows even without animation); the animation pulses its colour and
@@ -40,24 +40,50 @@
 
 <script>
 (function () {
+  // How to add the site to the home screen, for phones that aren't already
+  // running it as an installed app. Desktop gets no hint.
+  function installHint() {
+    var standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+    if (standalone) return "";
+    var ua = navigator.userAgent;
+    if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) {
+      return " Per averlo sul telefono come un'app, dal tasto Condividi del browser scegli «Aggiungi alla schermata Home».";
+    }
+    if (/Android/.test(ua)) {
+      return " Per averlo sul telefono come un'app, dal menu ⋮ del browser scegli «Installa app».";
+    }
+    return "";
+  }
+
   function initTour() {
     var STEPS = [
         { path: "/settings", target: "#tour-zones", title: "Scegli le tue zone",
           body: "Imposta le regioni o province dove vuoi vedere i concerti. Cerca una zona qui sotto e toccala per aggiungerla.",
           next: "/artists?tour=2" },
         { path: "/artists", target: "#tour-add", title: "Aggiungi gli artisti che ami",
-          body: "Tocca «+ Aggiungi» e cerca gli artisti da seguire: i loro concerti appariranno nei Concerti.",
+          body: "Scrivi qui il nome di un artista e toccalo tra i risultati «Da aggiungere» per seguirlo: in pochi secondi i suoi concerti appariranno nei Concerti.",
           next: "/?tour=3" },
         { path: "/", target: "#tour-create", title: "Salva e crea",
           body: "Nei Concerti tocca la ★ su un evento per salvarlo nel Calendario. Con «+ Crea evento» ne aggiungi uno a mano.",
+          next: "/calendario?tour=4" },
+        { path: "/calendario", target: null, title: "Il tuo calendario",
+          body: "Qui ritrovi i concerti che hai salvato, mese per mese." + installHint(),
           next: null },
     ];
 
     // The URL ?tour=N seeds the step; sessionStorage then keeps the tour alive
-    // across navigations that drop the query. Adding an artist redirects to a
-    // bare /artists (no ?tour), which otherwise killed the tour mid-way.
+    // across navigations that drop the query (adding an artist comes back as
+    // /artists?added=N).
     var KEY = "poghiamo_tour";
-    var urlN = parseInt(new URLSearchParams(location.search).get("tour"), 10);
+    var params = new URLSearchParams(location.search);
+    var urlN = parseInt(params.get("tour"), 10);
+    if (params.has("tour")) {
+      // Drop it from the address, so a reload or Back after the tour ends
+      // doesn't start it again.
+      params.delete("tour");
+      var rest = params.toString();
+      history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
+    }
     var n = urlN || parseInt(sessionStorage.getItem(KEY), 10);
     if (!n || n < 1 || n > STEPS.length) return;
     sessionStorage.setItem(KEY, n);
@@ -65,20 +91,33 @@
     var step = STEPS[n - 1];
     if (location.pathname !== step.path) return;  // tour active, but not this step's page
 
-    var target = document.querySelector(step.target);
+    var target = step.target && document.querySelector(step.target);
     if (target) {
         target.classList.add("tour-target");
         target.scrollIntoView({ block: "center", behavior: "smooth" });
     }
 
+    var bubble = document.getElementById("tour-bubble");
     document.getElementById("tour-title").textContent = step.title;
     document.getElementById("tour-body").textContent = step.body;
     document.getElementById("tour-count").textContent = n + "/" + STEPS.length;
     var nextBtn = document.getElementById("tour-next");
     nextBtn.textContent = step.next ? "Avanti" : "Fine";
-    document.getElementById("tour-bubble").classList.remove("hidden");
+    bubble.classList.remove("hidden");
 
-    function finish() { sessionStorage.removeItem(KEY); location.href = "/calendario"; }
+    // Finishing and skipping both count as done. Wait for the server before
+    // leaving the page (keepalive covers a slow answer); offline, the tour
+    // simply starts again at the next login.
+    function finish() {
+        sessionStorage.removeItem(KEY);
+        bubble.classList.add("hidden");
+        if (target) target.classList.remove("tour-target");
+        fetch("/tour/done", { method: "POST", keepalive: true })
+            .catch(function () {})
+            .then(function () {
+                if (location.pathname !== "/calendario") location.href = "/calendario";
+            });
+    }
     nextBtn.addEventListener("click", function () {
         if (!step.next) { finish(); return; }
         sessionStorage.setItem(KEY, n + 1);

@@ -31,6 +31,8 @@ class User(Base):
     created_at = Column(DateTime, default=func.now())
     # Timestamp of the last events-feed visit, for the "new since last visit" marker.
     last_seen_events_at = Column(DateTime, nullable=True)
+    # When the guided tour was finished or skipped; NULL starts it at login.
+    tour_done_at = Column(DateTime, nullable=True)
     # Areas of interest: whole regions (names) and/or single provinces (sigle),
     # both JSON lists. An event matches if its region OR its province is
     # selected; both empty = all of Italy (see geo.area_matches).
