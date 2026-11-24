@@ -644,6 +644,14 @@ def artist_detail(
         return RedirectResponse("/artists", status_code=303)
     events = feed.artist_events(db, artist_id)
     feed.annotate(events, last_seen=user.last_seen_events_at, saved_ids=feed.saved_event_ids(db, user), user=user)
+    # Concerts in the user's areas go first, in their own highlighted section.
+    # With no area set there is nothing to single out.
+    in_zona = []
+    if user.regions or user.provinces:
+        in_zona = [
+            e for e in events if geo.area_matches(user.regions, user.provinces, e.region, e.province)
+        ]
+        events = [e for e in events if e not in in_zona]
     following = (
         db.query(Follow)
         .filter(Follow.user_id == user.id, Follow.artist_id == artist_id, Follow.state == "active")
@@ -653,7 +661,13 @@ def artist_detail(
     return templates.TemplateResponse(
         request=request,
         name="artist_detail.html",
-        context={"user": user, "artist": artist, "events": events, "following": following},
+        context={
+            "user": user,
+            "artist": artist,
+            "in_zona": in_zona,
+            "events": events,
+            "following": following,
+        },
     )
 
 

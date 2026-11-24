@@ -1,5 +1,6 @@
-{# Reusable event card. Expects `e` (an Event with transient is_new/is_stale/is_saved). #}
-<li class="bg-card border border-zinc-800 rounded-2xl p-4 flex gap-4">
+{# Reusable event card. Expects `e` (an Event with transient is_new/is_stale/is_saved/is_past);
+   `accent` set by the including page marks a concert in the user's areas. #}
+<li class="{{ 'bg-primary/10 border-primary/60' if accent else 'bg-card border-zinc-800' }} border rounded-2xl p-4 flex gap-4{{ ' opacity-40' if e.is_past }}">
     {% if e.artist.image_url %}
     <img src="{{ e.artist.image_url }}" alt="" class="w-14 h-14 rounded-xl object-cover bg-zinc-800 shrink-0">
     {% else %}

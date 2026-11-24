@@ -25,12 +25,23 @@
 
 {% block content %}
 <div class="max-w-3xl mx-auto px-6 pt-6 space-y-8">
+    {% if in_zona %}
     <section>
-        <h2 class="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-3">Prossime date</h2>
+        <h2 class="text-sm font-semibold text-primary uppercase tracking-wide mb-3">Nella tua zona</h2>
+        <ul class="space-y-3">
+            {% with accent = true %}{% for e in in_zona %}{% include "_event_card.html" %}{% endfor %}{% endwith %}
+        </ul>
+    </section>
+    {% endif %}
+
+    <section>
+        <h2 class="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-3">{{ 'Altre date' if in_zona else 'Prossime date' }}</h2>
         {% if events %}
         <ul class="space-y-3">
             {% for e in events %}{% include "_event_card.html" %}{% endfor %}
         </ul>
+        {% elif in_zona %}
+        <p class="text-sm text-zinc-500 py-2">Nessun'altra data in programma.</p>
         {% elif artist.last_scanned_at is none %}
         <p class="text-sm text-zinc-500 py-6">Sto cercando le date nelle fonti: ricarica la pagina tra qualche secondo.</p>
         {% else %}

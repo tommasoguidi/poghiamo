@@ -91,6 +91,7 @@ def test_annotate_new_and_stale():
         def __init__(self, fs, ls):
             self.first_seen_at, self.last_seen_at, self.id = fs, ls, 1
             self.added_by_user_id = None
+            self.date = FUTURE
 
     last_visit = dt.datetime(2026, 8, 10, 12, 0)
     fresh = E(dt.datetime(2026, 8, 11), feed.now_utc_naive())  # seen after last visit, seen now
@@ -301,3 +302,47 @@ def test_group_by_month_preserves_order(db):
     groups = feed.group_by_month([e1, e2, e3])
     assert len(groups) == 2
     assert len(groups[0][1]) == 2 and len(groups[1][1]) == 1
+
+
+# --- calendario dims by day, artist page singles out the user's areas ---
+
+
+def _card(page: str, artist_name: str) -> str:
+    """The <li> event card that shows `artist_name`."""
+    return next(chunk for chunk in page.split("<li ")[1:] if artist_name in chunk)
+
+
+def test_calendario_dims_past_concerts_by_day_not_by_month(client, db):
+    user = make_user(db, username="alice", password="testpass123")
+    yesterday, tomorrow = _artist(db, "Mobrici"), _artist(db, "Tamango")
+    today = dt.date.today()
+    for artist, date in ((yesterday, today - dt.timedelta(days=1)), (tomorrow, today + dt.timedelta(days=1))):
+        db.add(SavedEvent(user_id=user.id, event_id=_event(db, artist, date=date).id))
+    db.commit()
+    login(client, "alice", "testpass123")
+    page = client.get("/calendario").text
+    assert "opacity-40" in _card(page, "Mobrici").split(">")[0]
+    assert "opacity-40" not in _card(page, "Tamango").split(">")[0]
+
+
+def test_artist_page_puts_concerts_in_my_areas_first(client, db):
+    user = make_user(db, username="alice", password="testpass123")
+    user.regions = ["Lombardia"]
+    db.commit()
+    a = _artist(db)
+    _event(db, a, city="Roma", province="RM", region="Lazio", date=FUTURE)
+    _event(db, a, city="Milano", province="MI", region="Lombardia", date=FUTURE + dt.timedelta(days=5))
+    login(client, "alice", "testpass123")
+    page = client.get(f"/artists/{a.id}").text
+    assert page.index("Nella tua zona") < page.index("Milano") < page.index("Altre date") < page.index("Roma")
+    assert "border-primary/60" in _card(page, "Milano").split(">")[0]
+    assert "border-primary/60" not in _card(page, "Roma").split(">")[0]
+
+
+def test_artist_page_without_areas_has_no_zone_section(client, db):
+    make_user(db, username="alice", password="testpass123")
+    a = _artist(db)
+    _event(db, a)
+    login(client, "alice", "testpass123")
+    page = client.get(f"/artists/{a.id}").text
+    assert "Nella tua zona" not in page and "Prossime date" in page

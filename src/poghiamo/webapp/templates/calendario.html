@@ -21,8 +21,9 @@
     {% endif %}
 
     {% for g in groups %}
-    <div {% if g.anchor %}id="now"{% endif %} class="scroll-mt-20 {% if g.is_past %}opacity-40{% endif %}">
-        <h2 class="text-sm font-semibold uppercase tracking-wide mb-3 {{ 'text-primary' if g.is_current else 'text-zinc-500' }}">
+    {# A month stays highlighted until it ends; each concert dims from the day after. #}
+    <div {% if g.anchor %}id="now"{% endif %}>
+        <h2 class="text-sm font-semibold uppercase tracking-wide mb-3 {{ 'text-primary' if g.is_current else 'text-zinc-500' }}{{ ' opacity-40' if g.is_past }}">
             {{ g.first | it_month }}{% if g.is_past %} · passato{% endif %}
         </h2>
         <ul class="space-y-3">
