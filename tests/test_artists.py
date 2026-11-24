@@ -90,7 +90,8 @@ def test_artists_page_has_one_search_box_for_filtering_and_adding(client, db):
     page = client.get("/artists").text
     assert page.count('type="search"') == 1
     assert "Non ami ancora nessun artista" in page  # empty state points at the box
-    assert 'id="add-section"' in page  # "Da aggiungere" results, below the list
+    assert 'id="search-overlay"' in page  # results panel over the page
+    assert 'id="search-clear"' in page  # our own X, which also closes the keyboard
 
     client.post("/artists/add", data={"name": "Faccianuvola"}, follow_redirects=False)
     page = client.get("/artists").text

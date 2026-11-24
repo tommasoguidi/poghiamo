@@ -83,7 +83,7 @@
 </header>
 
 {% if user %}
-    <nav class="md:hidden fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 items-center bg-card/95 backdrop-blur border-t border-zinc-800 px-2"
+    <nav id="tabbar" class="md:hidden fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 items-center bg-card/95 backdrop-blur border-t border-zinc-800 px-2"
          style="height: var(--tabbar-h); padding-bottom: env(safe-area-inset-bottom);">
         <a href="/" class="flex flex-col items-center gap-1 py-1 transition-colors {{ 'text-primary' if tab == 'concerti' else 'text-zinc-500' }}">
             <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
