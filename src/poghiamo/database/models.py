@@ -33,6 +33,9 @@ class User(Base):
     last_seen_events_at = Column(DateTime, nullable=True)
     # When the guided tour was finished or skipped; NULL starts it at login.
     tour_done_at = Column(DateTime, nullable=True)
+    # Copied into the session at login; bumping it (password change or reset,
+    # "Esci ovunque") invalidates every session issued before.
+    session_version = Column(Integer, default=0, server_default="0", nullable=False)
     # Areas of interest: whole regions (names) and/or single provinces (sigle),
     # both JSON lists. An event matches if its region OR its province is
     # selected; both empty = all of Italy (see geo.area_matches).
@@ -86,6 +89,25 @@ class InviteToken(Base):
 
     creator = relationship("User", foreign_keys=[created_by], back_populates="tokens_created")
     used_by_user = relationship("User", foreign_keys=[used_by])
+
+
+class PasswordResetToken(Base):
+    """Single-use password reset link, issued by an admin or the poghiamo-admin CLI.
+
+    Only the SHA-256 of the token is stored, so the database (and its backups)
+    never hold a usable link. Valid for RESET_TOKEN_TTL; issuing a new one for the
+    same user replaces the old one, and using it deletes it.
+    """
+
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String, unique=True, nullable=False, index=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    user = relationship("User", foreign_keys=[user_id])
 
 
 class Artist(Base):

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-[80vh] flex items-center justify-center p-6">
+    <div class="w-full max-w-sm">
+
+        <div class="flex flex-col items-center mb-10">
+            <h1 class="text-3xl font-bold tracking-tight text-cream mb-2">poghi<span class="text-primary">amo</span></h1>
+        </div>
+
+        <div class="bg-card rounded-2xl p-8 shadow-xl border border-zinc-800">
+            <h2 class="text-xl font-semibold text-cream mb-8 text-center">Nuova password</h2>
+
+            {% if username %}
+            <p class="mb-6 text-sm text-zinc-400 text-center">
+                Account <span class="text-cream font-medium">{{ username }}</span>.
+                Dopo il cambio esci da tutti gli altri dispositivi.
+            </p>
+
+            {% if error %}
+            <div class="mb-6 px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">
+                {{ error }}
+            </div>
+            {% endif %}
+
+            <form action="/reset" method="POST" class="space-y-5">
+                <input type="hidden" name="token" value="{{ token }}">
+                {# Lets password managers file the new password under the right account. #}
+                <input type="text" name="username" value="{{ username }}" autocomplete="username" hidden>
+                <div class="space-y-1.5">
+                    <label class="block text-xs font-medium text-zinc-400 ml-1" for="new_password">Nuova password</label>
+                    <input type="password" name="new_password" id="new_password" minlength="6"
+                           class="block w-full px-4 py-3 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                           placeholder="minimo 6 caratteri" required autofocus autocomplete="new-password">
+                </div>
+                <div class="space-y-1.5">
+                    <label class="block text-xs font-medium text-zinc-400 ml-1" for="confirm_password">Conferma password</label>
+                    <input type="password" name="confirm_password" id="confirm_password" minlength="6"
+                           class="block w-full px-4 py-3 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                           placeholder="ripetila" required autocomplete="new-password">
+                </div>
+                <button type="submit"
+                        class="w-full bg-primary hover:bg-rose-600 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-rose-500/20 active:scale-95 transition-all mt-2">
+                    Salva e accedi
+                </button>
+            </form>
+            {% else %}
+            <div class="px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">
+                Link non valido, già usato o scaduto. Chiedine uno nuovo a chi ti ha invitato.
+            </div>
+            {% endif %}
+
+            <div class="mt-8 text-center">
+                <a href="/login" class="text-sm text-primary font-medium hover:underline underline-offset-4">Vai all'accesso</a>
+            </div>
+        </div>
+
+    </div>
+</div>
+<script>
+// A reset logs this browser into the account: drop the pages another account
+// may have saved here for offline reading, as the login page does.
+if ("caches" in window) { caches.delete("poghiamo-pages"); }
+</script>
+{% endblock %}

@@ -15,17 +15,28 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from poghiamo.config import SECRET_KEY, SESSION_HTTPS_ONLY, WEBAPP_URL
 from poghiamo.database.engine import get_db, init_db
-from poghiamo.database.models import Artist, Event, Follow, InviteToken, SavedEvent, User
+from poghiamo.database.models import (
+    Artist,
+    Event,
+    Follow,
+    InviteToken,
+    PasswordResetToken,
+    SavedEvent,
+    User,
+)
 from poghiamo import geo
-from poghiamo.services import artist_search, feed
+from poghiamo.services import artist_search, feed, password_reset
 from poghiamo.services.source_health import ago_it, source_health
 from poghiamo.webapp.auth import (
+    PASSWORD_ERRORS,
     RedirectToLogin,
     generate_invite_token,
     get_current_user,
     hash_password,
+    password_problem,
     require_admin,
     require_user,
+    start_session,
     verify_password,
 )
 
@@ -34,6 +45,21 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+class _RedactResetToken(logging.Filter):
+    """Keep reset links out of the uvicorn access log: only their hash is in
+    the database, and the log should not undo that."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str):
+            if args[2].startswith("/reset?"):
+                record.args = args[:2] + ("/reset?[redacted]",) + args[3:]
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_RedactResetToken())
 
 _WEBAPP_DIR = Path(__file__).parent
 
@@ -138,7 +164,7 @@ def login(
             name="login.html",
             context={"error": "Nome utente o password non validi"},
         )
-    request.session["user_id"] = user.id
+    start_session(request, user)
     return RedirectResponse(_landing_url(user), status_code=303)
 
 
@@ -177,15 +203,9 @@ def signup(
     if not token_obj:
         ctx["error"] = "Codice di invito non valido o già usato"
         return templates.TemplateResponse(request=request, name="signup.html", context=ctx)
-    if password != confirm_password:
-        ctx["error"] = "Le password non coincidono"
-        return templates.TemplateResponse(request=request, name="signup.html", context=ctx)
-    if len(password) < 6:
-        ctx["error"] = "La password deve avere almeno 6 caratteri"
-        return templates.TemplateResponse(request=request, name="signup.html", context=ctx)
-    if len(password.encode("utf-8")) > 72:
-        # bcrypt silently ignores bytes past 72: reject instead of pretending.
-        ctx["error"] = "Password troppo lunga (massimo 72 byte)"
+    problem = password_problem(password, confirm_password)
+    if problem:
+        ctx["error"] = PASSWORD_ERRORS[problem]
         return templates.TemplateResponse(request=request, name="signup.html", context=ctx)
     if len(username) < 3:
         ctx["error"] = "Il nome utente deve avere almeno 3 caratteri"
@@ -214,7 +234,7 @@ def signup(
         return templates.TemplateResponse(request=request, name="signup.html", context=ctx)
     db.commit()
 
-    request.session["user_id"] = user.id
+    start_session(request, user)
     # Brand-new account: start the guided tour (zones, artists, concerti, calendario).
     return RedirectResponse(_landing_url(user), status_code=303)
 
@@ -233,6 +253,92 @@ def tour_done(db: Session = Depends(get_db), user: User = Depends(require_user))
 def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=303)
+
+
+@app.post("/logout/all")
+def logout_everywhere(
+    request: Request, db: Session = Depends(get_db), user: User = Depends(require_user)
+):
+    """Invalidate every session of this account, this one included."""
+    user.session_version += 1
+    db.commit()
+    request.session.clear()
+    return RedirectResponse("/login", status_code=303)
+
+
+# --- PASSWORD CHANGE AND RESET ---
+
+
+@app.post("/account/password")
+def change_password(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+):
+    # The current password is required so that a stolen session cannot lock
+    # the owner out.
+    if not verify_password(current_password, user.hashed_password):
+        return RedirectResponse("/settings?pw=wrong#password", status_code=303)
+    problem = password_problem(new_password, confirm_password)
+    if problem:
+        return RedirectResponse(f"/settings?pw={problem}#password", status_code=303)
+    user.hashed_password = hash_password(new_password)
+    user.session_version += 1
+    db.commit()
+    # Every other device is logged out; this one moves to the new version.
+    start_session(request, user)
+    logger.info(f"User '{user.username}' changed their password.")
+    return RedirectResponse("/settings?pw=ok#password", status_code=303)
+
+
+@app.get("/reset", response_class=HTMLResponse)
+def reset_page(request: Request, db: Session = Depends(get_db), token: str = ""):
+    reset = password_reset.find(db, token)
+    return templates.TemplateResponse(
+        request=request,
+        name="reset.html",
+        context={"token": token, "username": reset.user.username if reset else None},
+    )
+
+
+@app.post("/reset")
+def reset_password(
+    request: Request,
+    db: Session = Depends(get_db),
+    token: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+):
+    reset = password_reset.find(db, token)
+    if reset is None:
+        return templates.TemplateResponse(
+            request=request, name="reset.html", context={"token": token, "username": None}
+        )
+    user = reset.user
+    problem = password_problem(new_password, confirm_password)
+    if problem:
+        return templates.TemplateResponse(
+            request=request,
+            name="reset.html",
+            context={"token": token, "username": user.username, "error": PASSWORD_ERRORS[problem]},
+        )
+    # Consume first, with a guarded DELETE: of two concurrent submits of the
+    # same link only one deletes the row, the other rolls back.
+    consumed = db.query(PasswordResetToken).filter(PasswordResetToken.id == reset.id).delete()
+    if consumed != 1:
+        db.rollback()
+        return templates.TemplateResponse(
+            request=request, name="reset.html", context={"token": token, "username": None}
+        )
+    user.hashed_password = hash_password(new_password)
+    user.session_version += 1
+    db.commit()
+    start_session(request, user)
+    logger.info(f"Password of '{user.username}' reset through a reset link.")
+    return RedirectResponse(_landing_url(user), status_code=303)
 
 
 # --- PAGES ---
@@ -683,7 +789,10 @@ def settings_page(
     saved: str = None,
     hint: str = None,
     welcome: str = None,
+    pw: str = None,
 ):
+    # A reset link just generated by the admin: shown once, then gone.
+    reset_link = request.session.pop("reset_link", None)
     invite_tokens = []
     all_users = []
     sources = []
@@ -712,6 +821,9 @@ def settings_page(
             "saved": saved,
             "hint": hint,
             "welcome": welcome,
+            "pw_ok": pw == "ok",
+            "pw_error": {**PASSWORD_ERRORS, "wrong": "Password attuale errata"}.get(pw),
+            "reset_link": reset_link if user.is_admin else None,
             # Flat searchable list for the area picker: regions first, then provinces.
             "areas": (
                 [{"type": "region", "value": r, "label": r, "region": r} for r in geo.regions()]
@@ -803,6 +915,10 @@ def _purge_user(db, target: User) -> None:
     their bookmarks and follows go; the custom events they created stay (shared
     with co-followers) but are detached; invite tokens keep their audit trail."""
     db.query(SavedEvent).filter(SavedEvent.user_id == target.id).delete()
+    db.query(PasswordResetToken).filter(PasswordResetToken.user_id == target.id).delete()
+    db.query(PasswordResetToken).filter(PasswordResetToken.created_by == target.id).update(
+        {"created_by": None}
+    )
     db.query(Follow).filter(Follow.user_id == target.id).delete()
     # Custom events they created remain visible to co-followers, just orphaned.
     db.query(Event).filter(Event.added_by_user_id == target.id).update(
@@ -843,6 +959,35 @@ def admin_delete_user(
     db.commit()
     logger.info(f"Admin '{admin.username}' deleted account '{username}'.")
     return RedirectResponse("/settings", status_code=303)
+
+
+@app.post("/admin/users/{user_id}/reset-link")
+def admin_reset_link(
+    request: Request,
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+    password: str = Form(...),
+):
+    # A reset link hands over the account: confirm with the admin's password,
+    # like deleting a user.
+    if not verify_password(password, admin.hashed_password):
+        return RedirectResponse("/settings?error=Password+errata", status_code=303)
+    target = db.get(User, user_id)
+    if target is None or target.id == admin.id:
+        # The admin changes their own password from the Password card.
+        return RedirectResponse("/settings", status_code=303)
+    token = password_reset.issue(db, target, created_by=admin)
+    db.commit()
+    # Flashed through the session to survive the redirect. The cookie is signed,
+    # not encrypted, but it only travels between the admin's browser and us,
+    # and the settings page drops it on the next load.
+    request.session["reset_link"] = {
+        "username": target.username,
+        "url": password_reset.reset_url(WEBAPP_URL, token),
+    }
+    logger.info(f"Admin '{admin.username}' issued a reset link for '{target.username}'.")
+    return RedirectResponse("/settings#utenti", status_code=303)
 
 
 def main():

@@ -111,13 +111,24 @@ def _run_migrations():
                     )
                 )
 
+    # Migration 7 (password change and reset): session versioning. Existing rows
+    # and existing cookies (which carry no version) both count as 0, so the
+    # deploy logs nobody out. The reset-token table comes from create_all.
+    if "users" in inspector.get_table_names():
+        columns = [c["name"] for c in inspector.get_columns("users")]
+        if "session_version" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0")
+                )
+
 
 def seed_admin():
     """Bootstrap the admin account from ADMIN_USERNAME / ADMIN_PASSWORD.
 
     Unlike lesgoski, the password is applied only at CREATION: re-applying it on
-    every boot silently reverts in-app password changes. Rotation, if ever needed,
-    happens by deleting the user or via a future in-app change-password flow.
+    every boot would silently revert in-app password changes. A forgotten admin
+    password is recovered with `poghiamo-admin reset-link` on the server.
     """
     import logging
 

@@ -176,10 +176,43 @@
     <div class="bg-card rounded-2xl p-6 border border-zinc-800 flex items-center justify-between gap-4">
         <div>
             <h2 class="text-base font-semibold text-cream">Sessione</h2>
-            <p class="text-sm text-zinc-400">Esci da questo dispositivo.</p>
+            <p class="text-sm text-zinc-400">Esci da questo dispositivo o da tutti.</p>
         </div>
-        <form action="/logout" method="POST">
-            <button type="submit" class="bg-zinc-800 hover:bg-zinc-700 text-cream text-sm font-semibold px-5 py-2.5 rounded-xl active:scale-95 transition-all">Esci</button>
+        <div class="flex flex-col sm:flex-row gap-2 shrink-0">
+            <form action="/logout" method="POST">
+                <button type="submit" class="w-full bg-zinc-800 hover:bg-zinc-700 text-cream text-sm font-semibold px-5 py-2.5 rounded-xl active:scale-95 transition-all">Esci</button>
+            </form>
+            <form action="/logout/all" method="POST"
+                  onsubmit="return confirm('Uscire da tutti i dispositivi, compreso questo?');">
+                <button type="submit" class="w-full bg-zinc-800 hover:bg-zinc-700 text-cream text-sm font-semibold px-5 py-2.5 rounded-xl active:scale-95 transition-all whitespace-nowrap">Esci ovunque</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="password" class="bg-card rounded-2xl p-8 border border-zinc-800">
+        <h2 class="text-lg font-semibold text-cream mb-1">Cambia password</h2>
+        <p class="text-sm text-zinc-400 mb-4">Esci da tutti gli altri dispositivi, resti collegato solo su questo.</p>
+        {% if pw_ok %}
+        <div class="mb-4 px-4 py-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-sm">Password cambiata.</div>
+        {% elif pw_error %}
+        <div class="mb-4 px-4 py-2.5 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">{{ pw_error }}</div>
+        {% endif %}
+        <form action="/account/password" method="POST" class="space-y-3">
+            {# Lets password managers file the new password under the right account. #}
+            <input type="text" name="username" value="{{ user.username }}" autocomplete="username" hidden>
+            <input type="password" name="current_password" placeholder="Password attuale" required
+                   autocomplete="current-password"
+                   class="block w-full px-4 py-2.5 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all text-sm">
+            <input type="password" name="new_password" placeholder="Nuova password (minimo 6 caratteri)" required minlength="6"
+                   autocomplete="new-password"
+                   class="block w-full px-4 py-2.5 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all text-sm">
+            <input type="password" name="confirm_password" placeholder="Ripeti la nuova password" required minlength="6"
+                   autocomplete="new-password"
+                   class="block w-full px-4 py-2.5 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all text-sm">
+            <button type="submit"
+                    class="bg-zinc-800 hover:bg-zinc-700 text-cream text-sm font-semibold px-5 py-2.5 rounded-xl active:scale-95 transition-all">
+                Cambia password
+            </button>
         </form>
     </div>
 
@@ -257,9 +290,26 @@
         {% endif %}
     </div>
 
-    <div class="bg-card rounded-2xl p-8 border border-zinc-800">
+    <div id="utenti" class="bg-card rounded-2xl p-8 border border-zinc-800">
         <h2 class="text-lg font-semibold text-cream mb-1">Utenti registrati</h2>
-        <p class="text-sm text-zinc-400 mb-4">Elimina l'account di un altro utente, e tutto ciò che gli appartiene.</p>
+        <p class="text-sm text-zinc-400 mb-4">
+            Crea un link per reimpostare la password di un utente (valido 72 ore, monouso), oppure
+            elimina il suo account e tutto ciò che gli appartiene.
+        </p>
+        {% if reset_link %}
+        <div class="mb-4 px-4 py-3 bg-primary/10 border border-primary/30 rounded-xl text-sm">
+            <p class="text-cream">Link di reset per <span class="font-semibold">{{ reset_link.username }}</span>, valido 72 ore.</p>
+            <p class="text-xs text-zinc-400 mt-1">Lo vedi solo adesso: mandalo subito. Se lo perdi, generane un altro.</p>
+            <div class="text-xs text-zinc-500 break-all mt-2">{{ reset_link.url }}</div>
+            <div class="flex items-center gap-4 mt-2">
+                <button type="button" class="text-xs text-zinc-400 hover:text-primary transition-colors"
+                        data-url="{{ reset_link.url }}" onclick="copyText(this.dataset.url, this)">Copia</button>
+                <button type="button" class="text-xs text-zinc-400 hover:text-primary transition-colors"
+                        data-url="{{ reset_link.url }}"
+                        onclick="shareLink(this.dataset.url, 'Ecco il link per scegliere una nuova password su poghiamo', this)">Condividi</button>
+            </div>
+        </div>
+        {% endif %}
         {% if all_users %}
         <input type="password" id="admin-pw" placeholder="La tua password (per confermare)" autocomplete="current-password"
                class="block w-full mb-4 px-4 py-2.5 bg-zinc-900 border border-zinc-700 text-cream rounded-xl focus:ring-2 focus:ring-red-500 outline-none text-sm">
@@ -267,11 +317,18 @@
             {% for u in all_users %}
             <li class="flex items-center justify-between gap-4 bg-zinc-900 rounded-xl px-4 py-2.5 text-sm">
                 <span class="text-cream">{{ u.username }}{% if u.is_admin %} <span class="text-xs text-primary">admin</span>{% endif %}</span>
-                <form action="/admin/users/{{ u.id }}/delete" method="POST">
-                    <input type="hidden" name="password">
-                    <button type="button" data-username="{{ u.username }}" onclick="delUser(this)"
-                            class="text-xs text-zinc-400 hover:text-red-400 transition-colors">Elimina</button>
-                </form>
+                <div class="flex items-center gap-4 shrink-0">
+                    <form action="/admin/users/{{ u.id }}/reset-link" method="POST">
+                        <input type="hidden" name="password">
+                        <button type="button" data-username="{{ u.username }}" onclick="resetLink(this)"
+                                class="text-xs text-zinc-400 hover:text-primary transition-colors">Link reset</button>
+                    </form>
+                    <form action="/admin/users/{{ u.id }}/delete" method="POST">
+                        <input type="hidden" name="password">
+                        <button type="button" data-username="{{ u.username }}" onclick="delUser(this)"
+                                class="text-xs text-zinc-400 hover:text-red-400 transition-colors">Elimina</button>
+                    </form>
+                </div>
             </li>
             {% endfor %}
         </ul>
@@ -323,21 +380,34 @@ function copyText(text, btn) {
     });
 }
 function shareInvite(url, btn) {
+    shareLink(url, "Ti ho invitato su poghiamo", btn);
+}
+function shareLink(url, text, btn) {
     if (navigator.share) {
-        navigator.share({ title: "poghiamo", text: "Ti ho invitato su poghiamo", url: url }).catch(function () {});
+        navigator.share({ title: "poghiamo", text: text, url: url }).catch(function () {});
     } else {
         navigator.clipboard.writeText(url).then(function () {
             if (btn) { var o = btn.textContent; btn.textContent = "Copiato!"; setTimeout(function () { btn.textContent = o; }, 1500); }
         });
     }
 }
-function delUser(btn) {
+// Both per-user actions are confirmed with the admin's password, typed once
+// in the shared #admin-pw field.
+function submitWithAdminPw(btn, missing, question) {
     var pw = document.getElementById("admin-pw").value;
-    if (!pw) { alert("Inserisci la tua password per eliminare un account."); return; }
-    if (!confirm("Eliminare l'account di " + btn.dataset.username + "?")) return;
+    if (!pw) { alert(missing); return; }
+    if (!confirm(question)) return;
     var form = btn.form;
     form.querySelector("input[name=password]").value = pw;
     form.submit();
+}
+function delUser(btn) {
+    submitWithAdminPw(btn, "Inserisci la tua password per eliminare un account.",
+        "Eliminare l'account di " + btn.dataset.username + "?");
+}
+function resetLink(btn) {
+    submitWithAdminPw(btn, "Inserisci la tua password per creare un link di reset.",
+        "Creare un link di reset per " + btn.dataset.username + "? Un link precedente smette di valere.");
 }
 </script>
 {% endblock %}

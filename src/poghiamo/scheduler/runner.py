@@ -2,7 +2,7 @@
 """Long-running scheduler container.
 
 Jobs:
-  - nightly SQLite backup;
+  - nightly SQLite backup, then removal of expired password reset links;
   - nightly DICE slug resolution from DICE's artist sitemap, when due;
   - the events scans, the only place where the app talks to the event sources,
     one artist at a time in two lanes: newly added artists within seconds, and
@@ -29,6 +29,25 @@ def run_backup():
         backup_database()
     except Exception as e:
         logger.error(f"Backup failed: {e}", exc_info=True)
+
+
+def run_purge_reset_links():
+    """The privacy notice promises reset links are gone after 72 hours, also the
+    ones nobody used."""
+    from poghiamo.database.engine import SessionLocal
+    from poghiamo.services import password_reset
+
+    db = SessionLocal()
+    try:
+        removed = password_reset.purge_expired(db)
+        db.commit()
+        if removed:
+            logger.info(f"Removed {removed} expired password reset link(s).")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Reset link cleanup failed: {e}", exc_info=True)
+    finally:
+        db.close()
 
 
 # A first scan can only fail on an internal error (a failing source is logged,
@@ -98,6 +117,7 @@ def main():
     logger.info("Scheduler starting.")
 
     schedule.every().day.at("04:15").do(run_backup)
+    schedule.every().day.at("04:30").do(run_purge_reset_links)
     schedule.every().day.at("03:00").do(run_dice_slugs)
     # Jobs run one after the other in this loop, so scans never overlap: a
     # single process, one artist at a time. After a downtime the due artists

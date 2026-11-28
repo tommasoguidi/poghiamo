@@ -8,6 +8,14 @@ from sqlalchemy.orm import Session
 from poghiamo.database.engine import get_db
 from poghiamo.database.models import User
 
+# Shared by signup, password change and reset, keyed so that redirects can carry
+# a code instead of free text.
+PASSWORD_ERRORS = {
+    "mismatch": "Le password non coincidono",
+    "short": "La password deve avere almeno 6 caratteri",
+    "long": "Password troppo lunga (massimo 72 byte)",
+}
+
 # Word list for human-readable invite tokens (entropy comes from secrets.choice:
 # 70*70*90 ≈ 440k combinations, plenty for single-use short-lived tokens that are
 # also rate-limited at the edge).
@@ -33,6 +41,25 @@ def hash_password(plain: str) -> str:
     return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
+def password_problem(password: str, confirm: str) -> str | None:
+    """Return a PASSWORD_ERRORS key if the new password is not acceptable."""
+    if password != confirm:
+        return "mismatch"
+    if len(password) < 6:
+        return "short"
+    if len(password.encode("utf-8")) > 72:
+        # bcrypt silently ignores bytes past 72: reject instead of pretending.
+        return "long"
+    return None
+
+
+def start_session(request: Request, user: User) -> None:
+    """Log the user in on this browser, bound to their current session version."""
+    request.session.clear()
+    request.session["user_id"] = user.id
+    request.session["sv"] = user.session_version
+
+
 def generate_invite_token() -> str:
     """Generate a random invite token like 'bright-forest-42' (CSPRNG-backed)."""
     w1 = secrets.choice(_WORDS)
@@ -50,7 +77,8 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
     user_id = request.session.get("user_id")
     if user_id:
         user = db.get(User, user_id)
-        if user:
+        # Sessions from before session versioning carry no "sv" and count as 0.
+        if user and request.session.get("sv", 0) == user.session_version:
             return user
     request.session.clear()
     return None

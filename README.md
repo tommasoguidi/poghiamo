@@ -41,6 +41,12 @@ First deploy on the server:
 Updates: commit + push locally, `git pull` on the server,
 `docker compose up -d --build`.
 
+Forgotten passwords: there is no email, so an admin creates a reset link for
+the user from Impostazioni (Utenti registrati, "Link reset") and sends it by
+hand. The link is valid 72 hours and shown only once. An admin locked out of
+their own account gets a link on the server:
+`docker compose exec web poghiamo-admin reset-link <username>`.
+
 Nightly gzip'd SQLite backups land in the `backup-data` volume with two weeks
 of retention (plus a catch-up backup at scheduler start if today's is missing).
 They live on the same disk as the database: they protect against application
