@@ -31,10 +31,11 @@ services:
       - traefik.http.routers.poghiamo.tls.certresolver=letsencrypt
       - traefik.http.routers.poghiamo.middlewares=poghiamo-headers,poghiamo-body
       - traefik.http.routers.poghiamo.service=poghiamo
-      # /login and /signup carry a rate limit on top; the longer rule wins on
-      # those paths. tls=true without resolver: serves the certificate the
-      # router above already obtained (SNI-matched from the store).
-      - traefik.http.routers.poghiamo-auth.rule=Host(`poghiamo.quest`) && (Path(`/login`) || Path(`/signup`))
+      # The auth endpoints (login, signup, password reset and change) carry a
+      # rate limit on top; the higher priority wins on those paths. tls=true
+      # without resolver: serves the certificate the router above already
+      # obtained (SNI-matched from the store).
+      - traefik.http.routers.poghiamo-auth.rule=Host(`poghiamo.quest`) && (Path(`/login`) || Path(`/signup`) || Path(`/reset`) || Path(`/account/password`))
       - traefik.http.routers.poghiamo-auth.priority=200
       - traefik.http.routers.poghiamo-auth.entrypoints=websecure
       - traefik.http.routers.poghiamo-auth.tls=true
